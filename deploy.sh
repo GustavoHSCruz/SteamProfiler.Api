@@ -10,6 +10,10 @@
 #   ./deploy.sh            publica o origin/main dos dois repos
 #   ./deploy.sh --local    publica a árvore de trabalho, para o dia em que o
 #                          GitHub cair. Ainda roda a suíte.
+#   ./deploy.sh --dry-run  exporta, roda a suíte e mostra o que o rsync faria,
+#                          sem escrever nada no servidor e sem reiniciar nada.
+#                          É como se ensaia uma mudança neste arquivo sem
+#                          usar a produção de cobaia.
 #
 # Este arquivo e o watch.py ficam fora do rsync de propósito: editar o watcher
 # não pode reiniciar a api em produção.
@@ -27,13 +31,22 @@ REMOTO="server"
 DESTINO="steamprofiler"
 
 LOCAL=0
-[ "${1:-}" = "--local" ] && LOCAL=1
+ENSAIO=0
+for arg in "$@"; do
+  case "$arg" in
+    --local)   LOCAL=1 ;;
+    --dry-run) ENSAIO=1 ;;
+  esac
+done
+SECO=()
+[ "$ENSAIO" -eq 1 ] && SECO=(--dry-run)
 
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 morre() { log "$*"; exit 1; }
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+WORKTREES=()
+trap 'limpa_worktrees; rm -rf "$TMP"' EXIT
 
 # ── O que vai subir ──────────────────────────────────────────────────
 # Exportado, não copiado da árvore: um arquivo sujo no disco não tem como
@@ -54,8 +67,32 @@ exporta() {
   local sha
   sha="$(git -C "$repo" rev-parse --short origin/main)" || morre "$nome: sem origin/main"
   log "$nome: origin/main em $sha"
-  git -C "$repo" archive origin/main | tar -x -C "$destino" \
-    || morre "$nome: git archive falhou"
+  # worktree e não `git archive`: a suíte tem checks que perguntam ao git o
+  # que está versionado - o audit-release.py roda `git ls-files` para saber
+  # quais arquivos vão de fato sair do repositório - e um diretório extraído
+  # de um tar não tem .git nenhum para responder. Com archive o deploy morria
+  # em "returned non-zero exit status 128" no meio de uma checagem que estava
+  # certa; o errado era o export.
+  #
+  # `--detach` porque isto é uma foto de um commit e não um branch em que
+  # alguém vai trabalhar, e `--force` porque uma worktree deixada para trás
+  # por um deploy que morreu não pode travar o próximo.
+  rmdir "$destino" 2>/dev/null
+  git -C "$repo" worktree add --detach --force --quiet "$destino" origin/main \
+    || morre "$nome: worktree falhou"
+  WORKTREES+=("$repo|$destino")
+}
+
+# Toda worktree criada acima sai no fim, dê certo ou não. Sem isto o repo
+# acumula referências a diretórios em /tmp que já não existem.
+limpa_worktrees() {
+  local par repo caminho
+  for par in "${WORKTREES[@]:-}"; do
+    [ -z "$par" ] && continue
+    repo="${par%%|*}"; caminho="${par##*|}"
+    git -C "$repo" worktree remove --force "$caminho" >/dev/null 2>&1
+    git -C "$repo" worktree prune >/dev/null 2>&1
+  done
 }
 
 exporta api "$API" "$TMP/api"
@@ -97,13 +134,13 @@ fi
 # Cada um desses foi visto num --dry-run antes de este arquivo existir na
 # forma atual: os três últimos apareceram como "deleting" na primeira versão
 # da lista, que só tinha os óbvios.
-API_SAIU="$(rsync -azc --delete --out-format='%n' \
+API_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
   --exclude '.env' --exclude '.env.bak-*' --exclude 'data/' \
-  --exclude '__pycache__/' --exclude '.git/' --exclude 'site/' \
+  --exclude '__pycache__/' --exclude '.git' --exclude 'site/' \
   --exclude 'ollama-bridge/' --exclude 'deploy.sh' --exclude 'watch.py' \
   "$TMP/api/" "$REMOTO:$DESTINO/")" || morre "api: rsync falhou"
 
-FRONT_SAIU="$(rsync -azc --delete --out-format='%n' --exclude '.git/' \
+FRONT_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' --exclude '.git' \
   "$TMP/front/site/" "$REMOTO:$DESTINO/site/")" || morre "front: rsync falhou"
 
 lista() {
@@ -128,6 +165,12 @@ while IFS= read -r f; do
     *.py)               NEEDS_API=1 ;;
   esac
 done <<< "$API_SAIU"
+
+if [ "$ENSAIO" -eq 1 ]; then
+  log "ensaio: nada foi escrito no servidor e nada foi reiniciado"
+  log "ensaio: reiniciaria api=$NEEDS_API web=$NEEDS_WEB admin=$NEEDS_ADMIN"
+  exit 0
+fi
 
 [ "$NEEDS_API" -eq 1 ]   && { log "python mudou, reiniciando a api";     ssh "$REMOTO" 'docker restart steamprofiler-api'   >/dev/null 2>&1; }
 [ "$NEEDS_WEB" -eq 1 ]   && { log "nginx.conf mudou, reiniciando o web"; ssh "$REMOTO" 'docker restart steamprofiler-site'  >/dev/null 2>&1; }
