@@ -1,0 +1,244 @@
+/* steamprofiler.org - the owner panel, and nothing else.
+
+   Loaded only by the panel, which is a separate service on a separate port.
+   These rules were in extras.css, which every visitor downloads: the styling
+   of an inbox nobody else can open is dead weight in that file, and the
+   comments in it describe a machine the public site should not be describing.
+
+   It builds on style.css and extras.css, which the panel loads first, and uses
+   their tokens and primitives. */
+
+/* ── Admin ────────────────────────────────────────────────────────── */
+
+.gate { max-width: 420px; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.count {
+  padding: 8px 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+.count b { color: var(--text); font-weight: 600; }
+
+.triage { display: grid; gap: var(--gap); margin-top: 20px; }
+.item { padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.item[data-status="novo"] { border-left: 3px solid var(--accent); }
+.item-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.item-tools .select { width: auto; min-width: 130px; }
+.item-tools .input { flex: 1; min-width: 200px; }
+.item-contact {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--link);
+  word-break: break-all;
+}
+
+/* The same headline size the utility pages use, because the panel is one. */
+#inbox .display, #gate .display {
+  font-size: clamp(1.9rem, 4.4vw, 3.3rem);
+  margin-bottom: 6px;
+}
+
+/* ── The admin panel, second half ────────────────────────────────────
+   Two views instead of one list, and a card per address instead of a card
+   per row. Only loaded by the admin service; public pages never request it. */
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 18px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.tab:hover { color: var(--text); }
+.tab[data-on] { color: var(--text); border-bottom-color: var(--accent); }
+.tab b {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--faint);
+}
+.tab[data-on] b { color: var(--accent); }
+
+.count[data-warn] b { color: #ff7b84; }
+
+/* A repeat gets a visible edge. It is the one row on the page where reading
+   carefully matters and the one easiest to scroll past. */
+.item.block[data-repeat] { border-color: #7a2f37; }
+
+/* Everything the address reached for, laid out so that "one path" and "forty
+   paths" cannot be mistaken for each other at a glance. */
+.paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 12px 0 0;
+}
+.path {
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  word-break: break-all;
+}
+.path-more {
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.card-meta.hash {
+  color: var(--faint);
+  opacity: 0.6;
+  word-break: break-all;
+  font-size: 10px;
+}
+
+/* The appeals this address wrote, nested inside its card so that two messages
+   from one person read as one conversation instead of two strangers. */
+.appeals {
+  margin: 16px 0 0;
+  border-left: 2px solid var(--line);
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.appeal[data-status="novo"] { border-left: 2px solid var(--accent); padding-left: 12px; margin-left: -16px; }
+.appeal .unread { color: var(--accent); font-weight: 600; }
+.appeal .card-body { margin-top: 6px; }
+
+/* ── The editor, which only the admin service loads ────────────────── */
+
+.blog-editor { margin-top: 20px; }
+.editor-row {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.editor-row .field { margin-bottom: 0; }
+.editor-row .select { width: 100%; }
+
+.tabs--sub { margin: 20px 0 16px; }
+.lang-mark { color: var(--accent); font-size: 9px; }
+.textarea--tall { min-height: 340px; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+
+/* The translator sits above the fields it fills, so the button and the text
+   it is about to overwrite are in the same glance. */
+.tr-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.tr-flag { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+.tr-flag input { accent-color: var(--accent); }
+.tr-bar .form-note { margin: 0; }
+
+/* ── The experimental marking ──────────────────────────────────────────
+   One colour, reserved, and it deliberately is not --accent.
+
+   --accent is #ffb454, warm amber, and it is the site's primary: the active
+   tab, the focus ring, an unread appeal, the dot in the wordmark. A yellow
+   badge in that hue would read as "this is highlighted", which is the opposite
+   of what it has to say. So --exp is a colder, sourer yellow that appears
+   nowhere else on either page, and what separates it from the accent is not
+   only the hue but the treatment: hatched rather than solid. A stripe pattern
+   is not something this interface does anywhere, so it cannot be mistaken for
+   ordinary emphasis even at a glance.
+
+   The marking goes on the section, not on each figure. Everything in the census
+   view is new, so a badge per number would be a wall of yellow inside a week
+   and would stop being read - which is worse than no marking, because it looks
+   like diligence. */
+:root {
+  --exp: #e3d54a;
+  --exp-d: #8f8420;
+}
+
+/* The tab, so the warning is visible before the view is opened. */
+.tab[data-exp] b.exp-dot { color: var(--exp); font-size: 9px; }
+.tab[data-exp][data-on] { border-bottom-color: var(--exp); }
+.tab[data-exp][data-on] b.exp-dot { color: var(--exp); }
+
+/* The zone. Left edge plus a wash, which is what makes it a place rather than
+   a highlight - accents in this interface are always small and inline. */
+.panel[data-exp] {
+  border-left: 3px solid var(--exp);
+  background:
+    linear-gradient(0deg, rgba(227, 213, 74, 0.04), rgba(227, 213, 74, 0.04)),
+    var(--panel);
+}
+.panel[data-exp] .panel-bar { border-bottom-color: var(--exp-d); }
+
+/* The label. Outlined and hatched, never filled: a solid yellow pill is a
+   button, and this is not clickable. */
+.exp-badge {
+  padding: 3px 9px;
+  border: 1px solid var(--exp-d);
+  border-radius: 999px;
+  color: var(--exp);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(227, 213, 74, 0.14) 0 3px,
+    transparent 3px 7px);
+}
+
+/* ── Bars ─────────────────────────────────────────────────────────────
+   The census draws counts and nothing else, so one primitive covers all of
+   it: a label, a proportional bar, a number. Deliberately not a chart - a
+   count of forty things does not need axes, and a chart would make an
+   experimental number look more settled than it is. */
+.bars { display: grid; gap: 6px; margin: 10px 0 16px; }
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 26%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.bar-row > span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row > b { color: var(--text); font-weight: 600; }
+.bar-track { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--exp-d); border-radius: 999px; }
+/* The confidence of a label, which is the one thing in here worth colouring
+   differently: a guess and a declaration should not look alike. */
+.bar-row[data-conf="declared"] .bar-fill { background: var(--exp); }
+.bar-row[data-conf="unsure"] .bar-fill { background: var(--faint); }

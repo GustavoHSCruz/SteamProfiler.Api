@@ -1,0 +1,106 @@
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-16200}:80"
+    volumes:
+      - ${FRONTEND_DIR:-../steamprofiler-front/site}:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - app-data:/srv:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # A named volume may first be initialized through nginx's root-owned /srv.
+  # Normalize ownership before the unprivileged application touches SQLite.
+  init-data:
+    build:
+      context: .
+    user: "0:0"
+    command: ["chown", "-R", "10001:10001", "/app/data"]
+    volumes:
+      - app-data:/app/data
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      CACHE_TTL: "${CACHE_TTL:-900}"
+      DATA_DIR: /app/data
+      PORT: "8000"
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"
+      interval: 60s
+      timeout: 8s
+      retries: 3
+      start_period: 10s
+
+  # Optional owner panel. It is intentionally absent from a normal `up` and
+  # loopback-only by default. Prefer an SSH tunnel over a public port.
+  admin:
+    profiles: [admin]
+    build:
+      context: .
+    command: ["python", "/app/admin/server.py"]
+    ports:
+      - "${ADMIN_BIND:-127.0.0.1}:${ADMIN_PORT:-16201}:8000"
+    volumes:
+      - app-data:/app/data
+      - ${FRONTEND_DIR:-../steamprofiler-front/site}:/app/site:ro
+    env_file:
+      - .env
+    environment:
+      ADMIN_ALLOW_IPS: "${ADMIN_ALLOW_IPS:-127.0.0.1,::1}"
+      API_URL: http://api:8000
+      DATA_DIR: /app/data
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-aya-expanse:8b}"
+      OLLAMA_SLUG_MODEL: "${OLLAMA_SLUG_MODEL:-qwen3:8b}"
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      PUBLIC_SITE_URL: "${PUBLIC_SITE_URL:-http://127.0.0.1:16200}"
+      PORT: "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"
+      interval: 60s
+      timeout: 8s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  app-data:

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# This is the last cheap local gate before a broken tree leaves the machine.
+#
+# Versioned, and reached through core.hooksPath rather than by copying into
+# .git/hooks: a hook inside .git is invisible to the repository and exists on
+# exactly one machine, which is the same as not existing.
+#
+#   git push --no-verify   skips this. It is there for the case where the
+#                          checks themselves are what is broken. It also skips
+#                          the local gate, so use it deliberately.
+set -uo pipefail
+
+echo "pre-push: running the checks before this leaves the machine"
+if ! ./check.sh; then
+  echo
+  echo "pre-push: REFUSED. Nothing was pushed."
+  exit 1
+fi

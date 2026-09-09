@@ -1,0 +1,38 @@
+# The same ./check.sh that contributors and the pre-push hook run locally.
+#
+# This side has the check the front does not: nginx.conf is tested by the same
+# nginx that will run it. That is the file whose failure mode is the whole site
+# down rather than one page wrong, and the runner has docker, so there is no
+# reason for it to reach the server untested.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: ./check.sh
+        run: ./check.sh

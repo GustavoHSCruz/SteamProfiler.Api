@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible problem without sharing private data.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, `.env`, databases, raw IP addresses, or private profile data.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the route or component and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest safe, repeatable example.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA or release, if known.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python or Docker version, and relevant non-secret configuration.

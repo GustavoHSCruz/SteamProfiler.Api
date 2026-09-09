@@ -1,0 +1,145 @@
+# SteamProfiler API
+
+[![CI](https://github.com/GustavoHSCruz/SteamProfiler.Api/actions/workflows/ci.yml/badge.svg)](https://github.com/GustavoHSCruz/SteamProfiler.Api/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+<a href="https://ko-fi.com/gordziilla"><img src="https://storage.ko-fi.com/cdn/kofi3.png?v=3" alt="Support me on Ko-fi" height="36"></a>
+
+The server-side half of [steamprofiler.org](https://steamprofiler.org). It reads
+public Steam profiles, enriches them with store and community data, caches the
+results, and serves the
+[SteamProfiler frontend](https://github.com/GustavoHSCruz/SteamProfiler.Front).
+
+The application uses only Python's standard library: no framework, package
+manager, or runtime dependency. You provide your own Steam Web API key and run
+your own instance.
+
+## Features
+
+- Profile, library, achievement, friend, card, wishlist, Workshop, and game
+  catalogue readers.
+- Bounded in-memory caches for profile data and SQLite caches for shared public
+  metadata.
+- Per-client rate limits, scanner traps, and a daily Steam-key budget.
+- Privacy-aware logs and salted address identifiers instead of raw IP storage.
+- Optional owner-only moderation and blog administration panel.
+- Docker Compose deployment with nginx and an unprivileged API container.
+
+## Quick start
+
+You need Git, Docker with Compose v2, and a
+[Steam Web API key](https://steamcommunity.com/dev/apikey).
+
+```sh
+git clone https://github.com/GustavoHSCruz/SteamProfiler.Api.git steamprofiler-api
+git clone https://github.com/GustavoHSCruz/SteamProfiler.Front.git steamprofiler-front
+cd steamprofiler-api
+cp .env.example .env
+```
+
+Set your instance identity and API key in `.env`:
+
+```dotenv
+STEAM_API_KEY=your-key
+STEAM_ID=your-steamid64
+STEAM_VANITY=your-vanity-name
+```
+
+Start the public services:
+
+```sh
+docker compose up --build -d
+curl --fail http://127.0.0.1:16200/healthz
+```
+
+Open <http://127.0.0.1:16200>. The default bind is loopback-only. Set
+`HTTP_BIND=0.0.0.0` only when you deliberately want remote access, preferably
+behind TLS. Set `FRONTEND_DIR` if the frontend is not checked out beside the
+API.
+
+## Run without Docker
+
+Python 3.12 or newer is recommended. There is nothing to install:
+
+```sh
+set -a
+. ./.env
+set +a
+python3 api.py
+```
+
+The server listens on `PORT` (8000 by default) and writes persistent state to
+`DATA_DIR` (`./data` outside a container).
+
+## Configuration
+
+[`.env.example`](.env.example) documents every setting and its default,
+including cache lifetimes, upstream pacing, offline development modes, rate
+limits, donations, privacy salts, and the optional Ollama integration.
+
+Never commit `.env`. For a public deployment, generate separate random values
+for `ADMIN_TOKEN`, `IP_SALT`, and `CENSUS_SEED`:
+
+```sh
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+## Architecture
+
+```text
+browser -> nginx -> guard.py -> api.py -> Steam / OpenDota
+             |                    |
+             |                    +-> in-memory profile cache
+             +-> static frontend  +-> SQLite public-data caches
+```
+
+The main modules are `fetch.py` for Steam profiles, `meta.py` for store data,
+`cards.py` and `inv.py` for Community Market data, `fx.py` for exchange rates,
+and `census.py` for aggregate traffic counts.
+
+The service was built for a small independent site. Routes and payloads may
+evolve with its frontend; it is not currently a versioned third-party API.
+
+## Admin panel
+
+The panel belongs to this repository, not to the public frontend: its browser
+assets, authentication server, and privileged API routes evolve as one unit.
+It only reuses the frontend's shared styles, dictionary, and fonts. Publishing
+the source does not publish the panel itself.
+
+The optional admin service is absent from a normal Compose startup, is blocked
+by the public nginx listener, and binds to loopback by default:
+
+```sh
+docker compose run --rm admin python /app/admin/setup-cred.py
+docker compose --profile admin up --build -d
+```
+
+Prefer an SSH tunnel to publishing its port. If you change `ADMIN_BIND`, also
+keep `ADMIN_ALLOW_IPS` narrow and configure `ADMIN_TOKEN`.
+
+## Development
+
+Run the same validation used by CI:
+
+```sh
+./check.sh
+```
+
+It checks Python and JavaScript syntax, runs 59 unit tests, audits the release
+tree for common secret leaks, and validates nginx and Docker Compose.
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before a
+pull request and report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+SteamProfiler is an independent hobby project and is not affiliated with,
+endorsed by, or connected to Valve Corporation. Steam and the Steam logo are
+trademarks of Valve Corporation. Game names and art belong to their respective
+owners.
+
+Built with AI assistance, reviewed and shipped by a person.
