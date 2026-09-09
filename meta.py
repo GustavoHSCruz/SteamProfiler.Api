@@ -970,6 +970,21 @@ def _do_detail(appid, timeout=TIMEOUT, language="english"):
         )
     _save(appid, **fields)
     _save_catalogue(appid, language, catalog, at)
+    # Who published and who made it, handed to the company index. Free: both
+    # strings are already in the answer this call had to make anyway, and the
+    # index only reaches half the catalogue on its own - so a game somebody
+    # opened is a game whose studio should stop being invisible, without
+    # anyone waiting for a weekly walk to maybe get there.
+    #
+    # Imported here rather than at the top: houses reads this module for the
+    # catalogue snapshot, and two modules importing each other at load time is
+    # a cycle that only shows up in whichever one is imported first.
+    try:
+        import houses
+        houses.learn(appid, (data.get("name") or "").strip(),
+                     data.get("publishers"), data.get("developers"))
+    except Exception:  # noqa: BLE001 - the store cache is not the index's keeper
+        pass
     return True
 
 
@@ -1251,6 +1266,25 @@ def sync_search_catalog(api_key, page_getter=None):
             (synced_at,),
         )
     return {"games": len(games), "pages": pages, "synced_at": synced_at}
+
+
+def catalogue_appids(after=0, limit=5000):
+    """Appids from the catalogue snapshot, ascending, for a walk that resumes.
+
+    The snapshot is every public game Steam lists, which is what makes it the
+    right side to walk when the question is "what is missing": anything asking
+    that has to start from the whole shop rather than from the part of it this
+    site happens to have read.
+
+    Ascending and after a cursor rather than paged by offset, so a walk that
+    stops halfway through and comes back an hour later carries on instead of
+    counting from the beginning into a table that has moved underneath it."""
+    init()
+    with _db_lock, _connect() as con:
+        return [r[0] for r in con.execute(
+            "SELECT DISTINCT appid FROM search_terms "
+            "WHERE active = 1 AND appid > ? ORDER BY appid LIMIT ?",
+            (int(after), max(1, min(50000, int(limit)))))]
 
 
 def _search_snapshot(con, term, numeric, wanted):

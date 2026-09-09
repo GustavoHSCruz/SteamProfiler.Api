@@ -19,20 +19,39 @@ That is a hundred and eighty thousand calls against a quota the site spends on
 answering people, and at the rate meta.py paces itself it is four days of
 crawling to learn two strings per game.
 
-So this table is filled from SteamSpy, which publishes the whole catalogue a
-thousand rows at a time with both strings already on them. Two things about
-that are worth stating plainly, because they are the reason it is allowed to
-be here at all:
+So this table is filled from SteamSpy, which publishes a thousand rows at a
+time with both strings already on them. Two things about that are worth
+stating plainly, because they are the reason it is allowed to be here at all:
 
-    Nothing goes out.   The request is a page number. Not an appid, not a
-                        profile, not an address, nothing about anybody who
-                        visited. There is no way for the source to learn that
-                        this server has a visitor, let alone which one.
+    Nothing is about a visitor.  Neither request carries a profile, an
+                        address, or anything about who is reading. The walk
+                        asks for a page number; the backfill below asks about
+                        an appid, and which appid is decided by where a
+                        catalogue walk had got to, never by what somebody
+                        opened. The source cannot learn that this server has
+                        a visitor, let alone which one.
 
-    Nothing depends.    The fetch happens on a weekly timer, never on the path
-                        of a request. If the source is gone the table keeps
-                        what it had, the screens keep working, and the only
-                        thing that ages is how recently a new studio appeared.
+    Nothing depends.    Both fetches happen on a timer, never on the path of
+                        a request. If the source is gone the table keeps what
+                        it had, the screens keep working, and the only thing
+                        that ages is how recently a new studio appeared.
+
+`request=all` does not publish the whole catalogue, and finding that out the
+hard way is why the rest of this file exists. It is ordered by owners and it
+stops: measured on 2026-09-09 it ended at page 86, half of it, with 82,493 of
+the 175,162 apps Steam lists. What falls off the end is the tail - new games,
+small games, games nobody owns yet - which is most of the shop and exactly
+the half where a studio has one game and no other way to be found. A publisher
+that shipped its first game last week was not late to the index; it was never
+going to be in it.
+
+So there is a second source, `request=appdetails`, one app at a time, and a
+`house_learned` table for what it and the store cache find. It is paced at a
+request a second, it walks the catalogue snapshot in appid order and picks up
+where it stopped, and it only ever asks about apps the walk did not already
+answer for. That table is never dropped: the weekly rebuild swaps fresh tables
+in, so anything learned outside the walk is merged into them on the way past,
+or a week of backfill would disappear every Tuesday.
 
 What is kept from it is two strings per app - who published, who developed -
 and one appid per company, which is the game whose picture stands for it on
@@ -80,6 +99,20 @@ PAGE_GAP = 62.0
 # It ends by answering an empty page, but a source that starts erroring should
 # not turn into an unbounded walk either.
 MAX_PAGES = 400
+
+# One app at a time, for the half of the catalogue the walk above never
+# reaches. The source documents a request a second here rather than a minute,
+# which is the whole reason filling the gap this way is possible at all.
+DETAIL_SOURCE = "https://steamspy.com/api.php?request=appdetails&appid=%d"
+DETAIL_GAP = 1.1
+# How many apps one tick may ask about. Sized to leave the hour it runs in
+# with room to spare, so the worker is never still working when the next tick
+# is due and a refresh that comes due is not queued behind a backfill.
+BACKFILL_BUDGET = 2500
+# How many appids to read out of the catalogue at once while looking for the
+# next unanswered one. Larger than the budget because most of what comes back
+# is already known and skipped without a request.
+BACKFILL_SCAN = 20000
 
 # A week, which is the promise the screens make about how fresh the list of
 # companies is. A studio that shipped its first game on Tuesday shows up by
@@ -225,6 +258,36 @@ def init():
                 apps   INTEGER,
                 houses INTEGER
             );
+
+            -- What was learned outside the weekly walk: the per-app backfill
+            -- below, and the store cache when a visitor opens a game the walk
+            -- never covered. This is the one table refresh() does not drop,
+            -- and the reason it cannot is arithmetic: the walk reaches half
+            -- the catalogue, so a rebuild that kept only what the walk found
+            -- would throw away the other half every week.
+            CREATE TABLE IF NOT EXISTS house_learned (
+                kind     TEXT    NOT NULL,
+                slug     TEXT    NOT NULL,
+                appid    INTEGER NOT NULL,
+                name     TEXT    NOT NULL,
+                app_name TEXT    NOT NULL,
+                at       TEXT,
+                PRIMARY KEY (kind, slug, appid)
+            ) WITHOUT ROWID;
+            CREATE INDEX IF NOT EXISTS house_learned_by_app
+                ON house_learned (appid);
+
+            -- Where the catalogue walk stopped. One row, one number: the
+            -- backfill resumes from the appid after it, so a restart costs
+            -- the current batch and nothing else.
+            CREATE TABLE IF NOT EXISTS house_backfill (
+                id     INTEGER PRIMARY KEY CHECK (id = 1),
+                cursor INTEGER NOT NULL DEFAULT 0,
+                asked  INTEGER NOT NULL DEFAULT 0,
+                found  INTEGER NOT NULL DEFAULT 0,
+                at     TEXT,
+                laps   INTEGER NOT NULL DEFAULT 0
+            );
         """)
         # An index built before the picture existed keeps its rows and gains
         # the column; refresh() sees it empty and fills it on the next walk.
@@ -270,6 +333,210 @@ def state():
         "houses": row["houses"], "art": art,
         "stale": age is None or age > MAX_AGE,
     }
+
+
+# ── Learning one app ─────────────────────────────────────────────────────
+
+def names_from(value):
+    """The companies in whatever shape the caller has them.
+
+    The two sources disagree and both are right for themselves. SteamSpy
+    joins them into one string with commas, which is what split_names() is
+    for and why that function is as careful as it is. The storefront hands
+    over a list, already split, where running the comma rule again would be
+    wrong twice over: `CAPCOM Co., Ltd.` would come apart, and a list that
+    was never a string would be stringified into `['Horny Capybara Studio']`
+    and stored with the brackets on it.
+
+    That second one is not hypothetical. It is what this function was written
+    after: the first version passed the list straight to split_names and the
+    publisher went into the index under its own repr."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        out, seen = [], set()
+        for item in value:
+            who = " ".join(str(item or "").split())
+            key = who.casefold()
+            if who and key not in seen:
+                seen.add(key)
+                out.append(who)
+        return out
+    return split_names(value)
+
+
+def _rows_for(appid, app_name, by_kind):
+    """The (kind, slug, name) triples one app contributes, deduplicated."""
+    out = []
+    for kind in KINDS:
+        for who in names_from(by_kind.get(kind)):
+            slug = slugify(who)
+            if slug:
+                out.append((kind, slug, who[:200]))
+    return out
+
+
+def learn(appid, app_name, publishers=None, developers=None):
+    """Record who published and who made one app, from outside the walk.
+
+    Two callers: the backfill below, and the store cache when it reads a
+    game's catalogue for a page somebody opened. Both know two strings about
+    one app and neither can wait a week for the walk to maybe cover it.
+
+    Written twice on purpose. `house_learned` is the durable copy that
+    survives the weekly rebuild; the live tables get the same rows so the
+    company is on the screens now rather than after the next walk. A studio
+    whose only game came out this morning is the case this exists for, and
+    telling it to come back Tuesday is not an answer."""
+    init()
+    try:
+        appid = int(appid)
+    except (TypeError, ValueError):
+        return 0
+    app_name = " ".join(str(app_name or "").split())[:200]
+    if not appid or not app_name:
+        return 0
+    rows = _rows_for(appid, app_name, {"publisher": publishers,
+                                       "developer": developers})
+    if not rows:
+        return 0
+
+    stamp = _now().isoformat(timespec="seconds")
+    with _db_lock, _connect() as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO house_learned"
+            " (kind, slug, appid, name, app_name, at) VALUES (?, ?, ?, ?, ?, ?)",
+            [(kind, slug, appid, name, app_name, stamp) for kind, slug, name in rows])
+        con.execute("INSERT OR REPLACE INTO house_apps (appid, name) VALUES (?, ?)",
+                    (appid, app_name))
+        con.executemany(
+            "INSERT OR IGNORE INTO houses (kind, slug, appid) VALUES (?, ?, ?)",
+            [(kind, slug, appid) for kind, slug, _ in rows])
+        # A company nobody had heard of gets its row, and this app as the
+        # picture because it is the only game the index knows it has. A
+        # company that already existed keeps the face the walk chose for it,
+        # which was picked from review counts across everything it shipped.
+        con.executemany(
+            "INSERT OR IGNORE INTO house_names (kind, slug, name, games, flagship)"
+            " VALUES (?, ?, ?, 0, ?)",
+            [(kind, slug, name, appid) for kind, slug, name in rows])
+        for kind, slug, _ in rows:
+            con.execute(
+                "UPDATE house_names SET games ="
+                " (SELECT COUNT(*) FROM houses h WHERE h.kind = ? AND h.slug = ?)"
+                " WHERE kind = ? AND slug = ?", (kind, slug, kind, slug))
+    return len(rows)
+
+
+def learned_state():
+    """How far the backfill has walked, and what it has to show for it."""
+    init()
+    with _db_lock, _connect() as con:
+        row = con.execute("SELECT * FROM house_backfill WHERE id = 1").fetchone()
+        rows = con.execute("SELECT COUNT(*) FROM house_learned").fetchone()[0]
+        apps = con.execute(
+            "SELECT COUNT(DISTINCT appid) FROM house_learned").fetchone()[0]
+    return {
+        "cursor": row["cursor"] if row else 0,
+        "asked": row["asked"] if row else 0,
+        "found": row["found"] if row else 0,
+        "laps": row["laps"] if row else 0,
+        "at": row["at"] if row else None,
+        "rows": rows, "apps": apps,
+    }
+
+
+def _detail(appid, tries=2):
+    """One app from the per-app endpoint, or None."""
+    for attempt in range(tries):
+        req = urllib.request.Request(
+            DETAIL_SOURCE % int(appid),
+            headers={"User-Agent": "steamprofiler.org"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as answer:
+                body = answer.read()
+        except (urllib.error.URLError, OSError, TimeoutError):
+            if attempt + 1 == tries:
+                return None
+            time.sleep(DETAIL_GAP * 3)
+            continue
+        try:
+            value = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def backfill(budget=BACKFILL_BUDGET, catalogue=None):
+    """Ask about the apps the walk never covered, a second at a time.
+
+    `catalogue` is the appid source, defaulting to the snapshot meta.py keeps
+    of every public game on Steam. That is the right side to walk: the whole
+    shop, so that "which of these has nobody told us about" is a question with
+    an answer, rather than the part of the shop this site has already read.
+
+    Ends the lap by rewinding the cursor. The catalogue grows, companies get
+    renamed, and an app that answered nothing today may answer next month, so
+    the walk is a loop rather than a job that finishes."""
+    init()
+    getter = catalogue or _catalogue
+    with _db_lock, _connect() as con:
+        row = con.execute("SELECT * FROM house_backfill WHERE id = 1").fetchone()
+    cursor = row["cursor"] if row else 0
+    asked = found = 0
+    laps = (row["laps"] if row else 0)
+
+    while asked < budget:
+        batch = getter(cursor, BACKFILL_SCAN)
+        if not batch:
+            # Off the end of the catalogue: the lap is done and the next one
+            # starts at the beginning, where by then there will be new apps.
+            cursor = 0
+            laps += 1
+            break
+        cursor = batch[-1]
+        with _db_lock, _connect() as con:
+            marks = ",".join("?" * len(batch))
+            known = {r[0] for r in con.execute(
+                f"SELECT appid FROM house_apps WHERE appid IN ({marks})", batch)}
+        for appid in batch:
+            if appid in known:
+                continue
+            if asked >= budget:
+                # Stopped mid-batch, so the cursor goes back to just before
+                # this app rather than to the end of a batch that was not
+                # finished. Asking twice is cheap; skipping is not.
+                cursor = appid - 1
+                break
+            value = _detail(appid)
+            asked += 1
+            time.sleep(DETAIL_GAP)
+            if not value:
+                continue
+            if learn(appid, value.get("name"),
+                     value.get("publisher"), value.get("developer")):
+                found += 1
+
+    stamp = _now().isoformat(timespec="seconds")
+    with _db_lock, _connect() as con:
+        con.execute("""
+            INSERT INTO house_backfill (id, cursor, asked, found, at, laps)
+            VALUES (1, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                cursor = excluded.cursor, at = excluded.at, laps = excluded.laps,
+                asked = house_backfill.asked + excluded.asked,
+                found = house_backfill.found + excluded.found
+        """, (cursor, asked, found, stamp, laps))
+    return {"asked": asked, "found": found, "cursor": cursor, "laps": laps}
+
+
+def _catalogue(after, limit):
+    """Every public game Steam lists, ascending. Imported here rather than at
+    the top of the file: houses is readable from the command line against its
+    own database, and that should not need the store cache to open."""
+    import meta
+    return meta.catalogue_appids(after, limit)
 
 
 # ── Filling it ───────────────────────────────────────────────────────────
@@ -386,6 +653,25 @@ def refresh(force=False):
         con.executemany(
             "INSERT OR REPLACE INTO house_apps_new (appid, name) VALUES (?, ?)",
             list(apps.items()))
+        # Everything learned outside this walk, folded in before the counting.
+        # Without this the swap below would be a weekly amnesia: the walk
+        # reaches half the catalogue, so the other half - which only the
+        # backfill and the store cache know about - would vanish and be
+        # re-fetched from nothing every time.
+        #
+        # INSERT OR IGNORE for the names, so a company the walk already found
+        # keeps the face the walk chose. The walk picks it from review counts
+        # across everything the company shipped; a learned row only ever knows
+        # about one app and would replace a considered choice with an
+        # arbitrary one.
+        con.executescript("""
+            INSERT OR IGNORE INTO houses_new (kind, slug, appid)
+                SELECT kind, slug, appid FROM house_learned;
+            INSERT OR IGNORE INTO house_names_new (kind, slug, name, flagship)
+                SELECT kind, slug, name, appid FROM house_learned;
+            INSERT OR IGNORE INTO house_apps_new (appid, name)
+                SELECT appid, app_name FROM house_learned;
+        """)
         con.execute("""
             UPDATE house_names_new SET games = (
                 SELECT COUNT(*) FROM houses_new h
@@ -559,12 +845,25 @@ def houses_of(appid):
 
 def _run():
     while True:
+        spent = False
         try:
             result = refresh()
             if not result.get("skipped"):
                 print(f"houses: {result}", flush=True)
+                spent = True
         except Exception as e:  # noqa: BLE001 - a crawl thread must not die
             print(f"houses: {e}", flush=True)
+        # The rest of the tick goes to the gap, but only on a tick that did
+        # not just spend an hour walking pages. The weekly refresh is the one
+        # that keeps the whole index true, and it should never be waiting
+        # behind a backfill that will still be there next hour.
+        if not spent:
+            try:
+                got = backfill()
+                if got["asked"]:
+                    print(f"houses backfill: {got}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"houses backfill: {e}", flush=True)
         time.sleep(TICK)
 
 
@@ -585,4 +884,11 @@ if __name__ == "__main__":
     init()
     if "--refresh" in sys.argv:
         print(json.dumps(refresh(force=True), ensure_ascii=False, indent=1))
+    if "--backfill" in sys.argv:
+        budget = BACKFILL_BUDGET
+        for arg in sys.argv:
+            if arg.startswith("--budget="):
+                budget = int(arg.split("=", 1)[1])
+        print(json.dumps(backfill(budget), ensure_ascii=False, indent=1))
     print(json.dumps(state(), ensure_ascii=False, indent=1))
+    print(json.dumps(learned_state(), ensure_ascii=False, indent=1))
