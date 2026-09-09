@@ -38,8 +38,8 @@ CS2_APPID = 730
 DOTA_APPID = 570
 KEY = os.environ.get("STEAM_API_KEY", "").strip()
 # Whose site this is. The footer credit and the example link point here.
-OWNER_ID = os.environ.get("STEAM_ID", "76561197960265728")
-OWNER_VANITY = os.environ.get("STEAM_VANITY", "example")
+OWNER_ID = os.environ.get("STEAM_ID", "76561198086380973")
+OWNER_VANITY = os.environ.get("STEAM_VANITY", "gordziilla")
 # Overridable so the container can mount the code read-only and the cache apart.
 SITE_DIR = Path(os.environ.get("SITE_DIR") or Path(__file__).parent / "site")
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
