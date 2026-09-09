@@ -78,6 +78,10 @@ COST = {
     # Each layer has its own cache, but the first reader really can spend four.
     "public_game": 4,
     "og": 12,
+    # The embeds. Same shape as the link preview: resolve, one profile, and a
+    # drawing that costs nothing. Priced identically, and in KEY_SPENDING for
+    # the same reason - the profile behind it is a handful of calls to Steam.
+    "embed": 12,
     # A warm one is a single row out of SQLite and a cold one is a trip to the
     # storefront, and the handler cannot know which it will be before it asks.
     # Priced as the average of the two, which is to say cheaply.
@@ -138,8 +142,8 @@ COST = {
 # the pictures down with it - that would break every game page for the rest of
 # the day to save nothing. The price of a game is the same case: it comes from
 # the storefront, which has no key and no allowance to spend.
-KEY_SPENDING = frozenset(("resolve", "profile", "game", "public_game", "og", "rarities",
-                         "mates", "cards", "wishlist", "econ"))
+KEY_SPENDING = frozenset(("resolve", "profile", "game", "public_game", "og", "embed",
+                          "rarities", "mates", "cards", "wishlist", "econ"))
 
 # Distinct profiles per address, per hour.
 SUBJECT_WINDOW = 3600

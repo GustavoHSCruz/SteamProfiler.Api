@@ -23,6 +23,12 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     POST /vote                      -> toggle a vote on a board item
     GET  /support                   -> the donation channels that are configured
 
+    GET  /bars.svg?q=<anything>     the embeds: a chart, a strip, a badge. Every
+    GET  /banner.svg?q=<anything>   one of them self-contained, so it survives
+    GET  /badge.svg?q=<anything>    being pasted somewhere we do not control
+    GET  /bars.txt?q=<anything>     the same chart for a place that takes no
+                                    picture at all
+
     GET  /blog?lang=<xx>            -> the published posts, newest first
     GET  /blog/post?key=&lang=      -> one post, in the reader's language or the
                                        original, and which of the two it is
@@ -71,6 +77,7 @@ import bans
 import blog
 import cards
 import community
+import embed
 import census
 import fetch
 import fx
@@ -115,6 +122,11 @@ ECON_PANEL = os.environ.get("ECON_PANEL") == "1"
 # would allow. Twenty is a strip's worth of people and a fifth of the price of
 # a rarity scan.
 MATE_FRIENDS = int(os.environ.get("MATE_FRIENDS", "20"))
+# Which renderer each embed path asks for. A table rather than four branches,
+# because the handler below is the same seven lines for all of them.
+EMBEDS = {"/bars.svg": "bars", "/banner.svg": "banner",
+          "/badge.svg": "badge", "/bars.txt": "text"}
+
 # Bodies are tiny; anything larger is not a message.
 MAX_BODY = 8 * 1024
 # Except one, and it is the only write here that is not a message. A post is
@@ -739,6 +751,31 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "image/png")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", f"public, max-age={ttl}")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_svg(self, body, ttl):
+        """An embed. `Access-Control-Allow-Origin` because these are meant to be
+        read from somebody else's page - as an <img>, which needs no permission,
+        but also by a script that wants the file itself. There is nothing here
+        to protect: it is one public profile, drawn, and no request to this
+        service ever carries a cookie."""
+        body = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", f"public, max-age={ttl}")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_text(self, body, ttl):
+        body = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", f"public, max-age={ttl}")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1525,6 +1562,28 @@ class Handler(BaseHTTPRequestHandler):
                 png = cached(f"card:{sid}:{year}:{scan_state}", TTL,
                              lambda: og.year_card(profile, year, unlocks))
                 return self.send_png(png, TTL)
+
+            if url.path in EMBEDS:
+                # The four shapes a profile can leave here in. All of them are
+                # one profile lookup and some arithmetic, so they are priced and
+                # cached as that lookup and the drawing itself is not cached at
+                # all: rendering is microseconds, and a generator page trying
+                # ten variants of one chart would otherwise push ten copies of
+                # it into a cache that a profile needs the room in.
+                kind = EMBEDS[url.path]
+                who = one("q")
+                if not who:
+                    raise Fail(400, "@err.bad_steamid")
+                self.gate("embed", key=f"r:{who.lower()}")
+                sid = do_resolve(who)["steamid"]
+                self.gate("embed", key=f"p:{sid}", subject=sid)
+                profile = do_profile(sid)
+                o = embed.options(kind, one)
+                if kind == "text":
+                    return self.send_text(embed.text_bars(profile, o), TTL)
+                draw = {"bars": embed.bars, "banner": embed.banner,
+                        "badge": embed.badge}[kind]
+                return self.send_svg(draw(profile, o), TTL)
 
             if url.path == "/game/theme":
                 # Which of the themed pages this appid is about to become, as a

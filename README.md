@@ -18,6 +18,8 @@ your own instance.
 
 - Profile, library, achievement, friend, card, wishlist, Workshop, and game
   catalogue readers.
+- Embeddable renderers: a link-preview PNG drawn without an image library, and
+  self-contained SVG charts, banners and badges for a README, a forum or a blog.
 - Bounded in-memory caches for profile data and SQLite caches for shared public
   metadata.
 - Per-client rate limits, scanner traps, and a daily Steam-key budget.
@@ -95,8 +97,13 @@ browser -> nginx -> guard.py -> api.py -> Steam / OpenDota
 
 The main modules are `fetch.py` for Steam profiles, `meta.py` for store data,
 `cards.py` and `inv.py` for Community Market data, `fx.py` for exchange rates,
-`houses.py` for the publisher and developer index, and `census.py` for
-aggregate traffic counts.
+`houses.py` for the publisher and developer index, `census.py` for aggregate
+traffic counts, and `og.py` and `embed.py` for the two kinds of picture this
+service draws - the link preview, and the charts, banners and badges meant to
+be pasted somewhere else. Everything `embed.py` produces is self-contained: key
+art and avatars are cached by `art.py` and inlined as data URIs, because a file
+that fetches anything at render time is a file that draws differently, or not
+at all, wherever it was pasted.
 
 `houses.py` is worth one paragraph because its source is incomplete and the
 module is shaped around that. It fills weekly from SteamSpy's `request=all`,

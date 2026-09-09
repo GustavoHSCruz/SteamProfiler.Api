@@ -9,6 +9,13 @@ writes the bytes under `data/art/`, and answers; every request after that is
 served by nginx straight off disk and never reaches Python at all - nginx tries
 the file first and only falls back to this module when it is missing.
 
+Two smaller caches sit beside it, both for embed.py, which draws pictures that
+have to leave the site and therefore cannot point at Steam's CDN at all: the
+capsule of a game and the avatar of a profile, inlined into an SVG as data. Same
+arrangement as the heroes - fetched once, kept, never pre-fetched - in their own
+subdirectories, because nginx serves the top level of this one straight to the
+public and those two are read by Python and by nothing else.
+
 Nothing is pre-fetched. A library of 351 games would be 140 MB of art nobody
 asked for; the cache only ever holds the games whose pages were actually
 opened.
@@ -16,9 +23,11 @@ opened.
 Stdlib only, like everything else in the api container.
 """
 
+import hashlib
 import os
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -29,6 +38,24 @@ CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"
 # The wide hero first; the small header is the fallback for the old and the
 # delisted, which never had a hero image. Of the owner's hundred, nine.
 VARIANTS = ("library_hero.jpg", "header.jpg")
+
+# The same picture at the size an embed can carry. embed.py inlines these as
+# data URIs, so what matters here is not looking good on a page of its own but
+# being small enough that a chart of five games is still a file somebody can
+# paste into a README: a capsule is 10 to 20 KB against the hero's 400.
+THUMBS = ("capsule_231x87.jpg", "header.jpg")
+CAP_DIR = ART_DIR / "caps"
+# Avatars, which are the other picture an embed needs and the only one that does
+# not belong to an appid. Steam serves them off its own hosts, and this only
+# ever asks those - the URL arrives from Steam's own answer about a profile, and
+# checking it anyway is what keeps this from being something a crafted payload
+# could aim somewhere else.
+FACE_DIR = ART_DIR / "faces"
+FACE_HOSTS = ("avatars.steamstatic.com", "avatars.akamai.steamstatic.com",
+              "avatars.cloudflare.steamstatic.com", "cdn.akamai.steamstatic.com",
+              "steamcdn-a.akamaihd.net", "avatars.fastly.steamstatic.com",
+              "community.cloudflare.steamstatic.com",
+              "community.akamai.steamstatic.com")
 
 # Steam's art is a few hundred KB. Anything much larger is not what we asked
 # for, and writing it would mean a bad response could fill the disk.
@@ -41,64 +68,65 @@ _locks_guard = threading.Lock()
 _locks = {}
 
 
-def _lock_for(appid):
+def _lock_for(key):
     with _locks_guard:
-        return _locks.setdefault(appid, threading.Lock())
+        return _locks.setdefault(key, threading.Lock())
 
 
 def path_for(appid):
     return ART_DIR / f"{appid}.jpg"
 
 
-def _download(appid):
+def _fetch(url):
+    """One JPEG off Steam, or None. Every reason to say no is in here."""
+    req = urllib.request.Request(url, headers={"User-Agent": "steamprofiler.org"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            if r.status != 200:
+                return None
+            body = r.read(MAX_BYTES + 1)
+    except (urllib.error.URLError, OSError):
+        return None
+    # A JPEG starts with FF D8. Steam answers some misses with an HTML page and
+    # a 200, and writing that as `<appid>.jpg` would cache the mistake.
+    if len(body) > MAX_BYTES or not body.startswith(b"\xff\xd8"):
+        return None
+    return body
+
+
+def _download(appid, variants=VARIANTS):
     """The first variant that answers, or None if the app has no art at all."""
-    for name in VARIANTS:
-        req = urllib.request.Request(
-            f"{CDN}/{appid}/{name}",
-            headers={"User-Agent": "steamprofiler.org"},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-                if r.status != 200:
-                    continue
-                body = r.read(MAX_BYTES + 1)
-        except (urllib.error.URLError, OSError):
-            continue
-        # A JPEG starts with FF D8. Steam answers some misses with an HTML page
-        # and a 200, and writing that as `<appid>.jpg` would cache the mistake.
-        if len(body) > MAX_BYTES or not body.startswith(b"\xff\xd8"):
-            continue
-        return body
+    for name in variants:
+        body = _fetch(f"{CDN}/{appid}/{name}")
+        if body is not None:
+            return body
     return None
 
 
-def get(appid):
-    """The art for `appid`, from disk if it is there and from Steam if not.
+def _keep(dest, key, produce):
+    """The bytes at `dest`, produced and written once if they are not there yet.
 
-    Returns the bytes, or None when Steam has no art for this app - the page
-    drops the band rather than showing a broken frame, so None is an answer
-    rather than an error."""
-    appid = int(appid)
-    dest = path_for(appid)
+    The lock is per `key` rather than per file so a burst of first-time requests
+    for the same picture makes one trip to Steam and not one per connection."""
     try:
         return dest.read_bytes()
     except OSError:
         pass
 
-    with _lock_for(appid):
+    with _lock_for(key):
         # Another thread may have written it while this one waited.
         try:
             return dest.read_bytes()
         except OSError:
             pass
 
-        body = _download(appid)
+        body = produce()
         if body is None:
             return None
 
         # Written under a temporary name and renamed, because nginx serves this
         # directory directly: a half-written file would be served as the art.
-        ART_DIR.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         try:
             tmp.write_bytes(body)
@@ -113,10 +141,53 @@ def get(appid):
         return body
 
 
+def get(appid):
+    """The art for `appid`, from disk if it is there and from Steam if not.
+
+    Returns the bytes, or None when Steam has no art for this app - the page
+    drops the band rather than showing a broken frame, so None is an answer
+    rather than an error."""
+    appid = int(appid)
+    return _keep(path_for(appid), f"art:{appid}", lambda: _download(appid))
+
+
+def thumb(appid):
+    """The capsule for `appid`, small enough to travel inside an SVG."""
+    appid = int(appid)
+    return _keep(CAP_DIR / f"{appid}.jpg", f"cap:{appid}",
+                 lambda: _download(appid, THUMBS))
+
+
+def avatar(url):
+    """One profile picture, cached by the URL it came from.
+
+    Named after a hash of that URL and not after the steamid: Steam already
+    names these after the hash of the image, so a new picture is a new URL and
+    therefore a new file, and nobody has to work out when to expire the old one.
+    A steamid is also not something this cache should be storing the name of."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except (TypeError, ValueError):
+        return None
+    if host.lower() not in FACE_HOSTS:
+        return None
+    name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:24]
+    return _keep(FACE_DIR / f"{name}.jpg", f"face:{name}", lambda: _fetch(url))
+
+
 def stats():
     """How much has been kept, for /healthz."""
-    try:
-        files = list(ART_DIR.glob("*.jpg"))
-    except OSError:
-        return {"count": 0, "bytes": 0}
-    return {"count": len(files), "bytes": sum(f.stat().st_size for f in files)}
+    out = {}
+    for label, pattern in (("hero", "*.jpg"), ("caps", "caps/*.jpg"),
+                           ("faces", "faces/*.jpg")):
+        try:
+            files = list(ART_DIR.glob(pattern))
+        except OSError:
+            files = []
+        out[label] = {"count": len(files),
+                      "bytes": sum(f.stat().st_size for f in files)}
+    # The two figures /healthz has always printed, kept where they were: the
+    # hero cache is the one that can actually fill a disk.
+    out["count"] = out["hero"]["count"]
+    out["bytes"] = out["hero"]["bytes"]
+    return out
