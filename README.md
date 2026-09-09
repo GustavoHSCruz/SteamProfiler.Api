@@ -95,7 +95,18 @@ browser -> nginx -> guard.py -> api.py -> Steam / OpenDota
 
 The main modules are `fetch.py` for Steam profiles, `meta.py` for store data,
 `cards.py` and `inv.py` for Community Market data, `fx.py` for exchange rates,
-and `census.py` for aggregate traffic counts.
+`houses.py` for the publisher and developer index, and `census.py` for
+aggregate traffic counts.
+
+`houses.py` is worth one paragraph because its source is incomplete and the
+module is shaped around that. It fills weekly from SteamSpy's `request=all`,
+which is ordered by owners and stops: measured on 2026-09-09 it ended at page
+86 with 82,493 of the 175,162 apps Steam lists. The tail it drops is where a
+studio has one game and no other way to be found. Two things close the gap and
+both write to `house_learned`, the one table the weekly rebuild merges rather
+than replaces: a paced per-app walk over the catalogue snapshot, and the store
+detail pass handing over the two strings it already read for any game somebody
+opened.
 
 The service was built for a small independent site. Routes and payloads may
 evolve with its frontend; it is not currently a versioned third-party API.
