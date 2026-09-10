@@ -141,6 +141,17 @@ class EmbedTest(unittest.TestCase):
             self.assertEqual(sum(row.count(c) for c in (embed.FULL, embed.EMPTY)
                                  + embed.PARTIAL[1:]), 12)
 
+    def test_every_named_colour_draws(self):
+        # The table is written by hand, and one entry in it was three digits
+        # where every other was six. Naming them in a test is not enough: the
+        # bad one only failed on the way through ink(), so each has to make a
+        # badge.
+        for name in embed.BADGE_COLOURS:
+            with self.subTest(name):
+                svg = embed.badge(PROFILE, options("badge", color=name))
+                ET.fromstring(svg)
+                self.assertIn(embed.BADGE_COLOURS[name], svg)
+
     def test_the_colours_are_hex(self):
         for i in range(6):
             self.assertRegex(embed.ramp(i, 6, embed.THEMES["dark"]), r"^#[0-9a-f]{6}$")
@@ -149,6 +160,7 @@ class EmbedTest(unittest.TestCase):
         self.assertIsNone(embed.colour_of("mauve"))
         self.assertEqual(embed.ink("#ffb454"), "#0b0a0e")
         self.assertEqual(embed.ink("#131219"), "#ffffff")
+        self.assertEqual(embed.ink("#fff"), embed.ink("#ffffff"))
 
 
 if __name__ == "__main__":

@@ -758,7 +758,7 @@ def banner(profile, o):
 BADGE_COLOURS = {
     "amber": "#ffb454", "orange": "#e07b1f", "green": "#4c9a2a",
     "brightgreen": "#4bc21b", "blue": "#3d7bd6", "violet": "#8a63d2",
-    "red": "#c33", "pink": "#d6559a", "grey": "#5d5a6b", "gray": "#5d5a6b",
+    "red": "#cc3333", "pink": "#d6559a", "grey": "#5d5a6b", "gray": "#5d5a6b",
     "black": "#1a1822", "steam": "#66c0f4",
 }
 LABEL_BG = {"dark": "#3d3b47", "light": "#5c5866", "steam": "#2a475e"}
@@ -766,8 +766,16 @@ LABEL_BG = {"dark": "#3d3b47", "light": "#5c5866", "steam": "#2a475e"}
 
 def ink(colour):
     """Black or white over `colour`, whichever can be read on it. Amber with
-    white text is the one mistake that makes a badge look homemade."""
-    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    white text is the one mistake that makes a badge look homemade.
+
+    Three digits are expanded first. `red` was written `#c33` in the table above
+    and went straight through to here, where the third pair is an empty string
+    and int() raises - which is a 500 on a route whose whole point is that it
+    cannot fail, because nobody sees a 500 inside an <img>."""
+    raw = colour.lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    r, g, b = (int(raw[i:i + 2], 16) for i in (0, 2, 4))
     return "#0b0a0e" if (r * .299 + g * .587 + b * .114) > 150 else "#ffffff"
 
 
