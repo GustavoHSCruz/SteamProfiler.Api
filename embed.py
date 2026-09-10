@@ -1158,9 +1158,21 @@ OWN_SLOT = "#own"
 # a strip nobody reads, and six down the side of a 1000x1500 is a column.
 MAX_ART_FACTS = 6
 
-# A signature is a name, not a sentence. Fifteen characters is the longest
-# thing that still reads as one at the size this draws it.
-SIGN_MAX = 15
+# A signature is a name, not a sentence. Twenty-five characters is about the
+# longest thing that still reads as one, and the renderer shrinks the pen to fit
+# whatever is left of the corner rather than clipping it.
+#
+# It was fifteen, which turned out to be shorter than a lot of real personas -
+# the whole point of a signature is that it is somebody's own name, and a name
+# it cannot hold is a name that has to be abbreviated to be signed.
+SIGN_MAX = 25
+
+# The one way to ask for no signature at all. An empty parameter cannot mean it,
+# for the reason chosen() gives about `facts`: a query string cannot tell
+# `sign=` apart from a `sign` nobody wrote, and an empty one now means "use my
+# name" rather than "leave the corner blank". Same word as chosen() uses, so the
+# vocabulary of these URLs stays one vocabulary.
+NO_SIGN = "none"
 
 
 def backdrop_uri(profile, kind):
@@ -1481,8 +1493,12 @@ def options(kind, get):
             "round": get("round") not in ("", "0", "no", "false"),
             "foot": get("foot") not in ("0", "no", "false"),
             # Folded and trimmed here rather than in the renderer, so what the
-            # picture draws and what the URL says are the same fifteen
+            # picture draws and what the URL says are the same twenty-five
             # characters. sign.py drops whatever it cannot write after that.
+            #
+            # Left as it arrived, empty included: whose name goes here when the
+            # URL did not say is a question about the profile, which this
+            # function has never been given. signed() answers it.
             "sign": plain(get("sign"))[:SIGN_MAX],
         })
         # An avatar is 184 pixels and this canvas is up to 1920 of them, so
@@ -1560,6 +1576,29 @@ def signature(profile):
     return sign.fits(folded)
 
 
+def signed(o, profile):
+    """`o` with the signature filled in, for a card going anywhere at all.
+
+    A signature is a name, and the name it is nearly always going to be is the
+    one on the profile the card is about - so the corner is signed by default
+    and typing is what changes it, rather than the other way round. Before this,
+    an artwork arrived unsigned unless somebody thought to fill the field in,
+    which made the most obvious answer the one that took the most work.
+
+    Somebody who wants no signature says so with `sign=none`, and somebody who
+    wants a different one still writes it. Inside Steam the typed value is
+    ignored, but `none` is still honoured: turning the signature off publishes
+    nothing, so there is nothing there to insist on."""
+    if "sign" not in o:
+        return o
+    out = dict(o)
+    if out["sign"].lower() == NO_SIGN:
+        out["sign"] = ""
+    elif not out["sign"]:
+        out["sign"] = signature(profile)
+    return out
+
+
 def in_steam(kind, o, profile):
     """`o` as it is allowed to be drawn inside a Steam profile page.
 
@@ -1584,7 +1623,9 @@ def in_steam(kind, o, profile):
         if flag in out:
             out[flag] = True
     if "sign" in out:
-        out["sign"] = signature(profile)
+        # `none` still means none: a corner left blank says nothing, so there is
+        # nothing here to insist on. Anything else is the persona, typed or not.
+        out["sign"] = "" if out["sign"].lower() == NO_SIGN else signature(profile)
     return out
 
 

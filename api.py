@@ -1898,6 +1898,12 @@ class Handler(BaseHTTPRequestHandler):
                         o = embed.in_steam(kind, o, profile)
                     except embed.Refused as refused:
                         return self.send_svg(embed.refusal(refused, o), ttl)
+                else:
+                    # The same question the line above answers by force, asked
+                    # gently: an artwork with nothing in `sign` is signed with
+                    # the name on the profile, because that is what a signature
+                    # nearly always is. `sign=none` is how somebody says no.
+                    o = embed.signed(o, profile)
                 if kind == "text":
                     return self.send_text(embed.text_bars(profile, o), ttl)
                 draw = {"bars": embed.bars, "banner": embed.banner,

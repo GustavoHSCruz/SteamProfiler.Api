@@ -307,9 +307,10 @@ class ArtworkTest(EmbedTest):
         self.assertNotIn("base64", svg)
         ET.fromstring(svg)
 
-    def test_a_signature_is_fifteen_characters_and_is_drawn_as_strokes(self):
-        o = options("artwork", sign="Gordziilla e mais um tanto")
+    def test_a_signature_is_capped_and_is_drawn_as_strokes(self):
+        o = options("artwork", sign="Gordziilla e mais um tanto ainda que nao cabe")
         self.assertEqual(len(o["sign"]), embed.SIGN_MAX)
+        self.assertEqual(embed.SIGN_MAX, 25)
         svg = embed.artwork(PROFILE, o)
         ET.fromstring(svg)
         # No font is named for it, because there is no font: a signature that
@@ -453,3 +454,31 @@ class InSteamTest(EmbedTest):
         self.assertIn("steamprofiler.org", embed.banner(PROFILE, o))
         versus = options("versus", **{"in": "steam"})
         self.assertIn("steamprofiler.org", embed.versus(PROFILE, RIVAL, versus))
+
+    def test_an_artwork_is_signed_with_the_profile_that_asked_for_it(self):
+        # The corner is signed by default now: the name a signature is going to
+        # be is nearly always the name on the profile, so filling the field in
+        # should be what changes it and not what turns it on.
+        o = embed.signed(options("artwork"), PROFILE)
+        self.assertEqual(o["sign"], "Gordziilla")
+        self.assertIn("<path", embed.artwork(PROFILE, o))
+
+    def test_a_typed_signature_still_wins_outside_steam(self):
+        o = embed.signed(options("artwork", sign="Gordo"), PROFILE)
+        self.assertEqual(o["sign"], "Gordo")
+
+    def test_no_signature_is_asked_for_by_name(self):
+        # An empty parameter cannot mean it, because a query string cannot tell
+        # `sign=` apart from a `sign` nobody wrote - the same reason `facts` has
+        # its own word for none, and deliberately the same word.
+        self.assertEqual(embed.signed(options("artwork", sign="none"), PROFILE)["sign"], "")
+        self.assertEqual(embed.signed(options("artwork", sign="NONE"), PROFILE)["sign"], "")
+        # And inside Steam, where the typed value is thrown away, `none` is
+        # still honoured: a blank corner publishes nothing.
+        steam = options("artwork", sign="none", **{"in": "steam"})
+        self.assertEqual(embed.in_steam("artwork", steam, PROFILE)["sign"], "")
+
+    def test_a_card_for_a_persona_nobody_can_write_is_simply_unsigned(self):
+        who = {"profile": {"persona": "Олег"}}
+        self.assertEqual(embed.signed(options("artwork"), who)["sign"], "")
+        ET.fromstring(embed.artwork(PROFILE, embed.signed(options("artwork"), who)))
