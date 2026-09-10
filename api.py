@@ -80,6 +80,7 @@ from urllib.parse import parse_qs, urlparse
 
 import art
 import bans
+import blocks
 import blog
 import cards
 import community
@@ -111,6 +112,11 @@ PUBLIC_GAME_NEGATIVE_TTL = 30 * 24 * 3600
 # reach. The service still only rebuilds every TTL.
 CLIENT_TTL = int(os.environ.get("CLIENT_TTL", "60"))
 OWNER_TTL = int(os.environ.get("OWNER_TTL", "1800"))
+# An embed drawn inside a Steam profile by the Companion. Shorter than TTL
+# because this one is on somebody's page claiming to be current, and because a
+# card that has to stop being served - a name that changed, a profile that was
+# blocked - is only really gone once the last of four caches has let go of it.
+STEAM_EMBED_TTL = int(os.environ.get("STEAM_EMBED_TTL", "300"))
 # Hard ceiling so a stream of lookups cannot grow the process without bound.
 MAX_ENTRIES = int(os.environ.get("CACHE_MAX", "400"))
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
@@ -1503,6 +1509,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "community": community.stats(),
                                             "inventories": inv.stats(),
                                             "guard": guard.state(),
+                                            "blocks": blocks.state(),
                                             "census": census.state()})
             if url.path == "/art":
                 # Only ever reached on a miss: nginx serves data/art directly
@@ -1862,14 +1869,40 @@ class Handler(BaseHTTPRequestHandler):
                     raise Fail(400, "@err.bad_steamid")
                 self.gate("embed", key=f"r:{who.lower()}")
                 sid = do_resolve(who)["steamid"]
+                # Refused before the profile is even read, and only on the Steam
+                # path: a block is about what this service draws on Valve's page,
+                # not about the profile existing. It answers 404 rather than a
+                # card explaining itself, because the message would be printed on
+                # somebody's profile for every visitor to read, and a moderation
+                # decision is not something to announce to a stranger.
+                if one("in") == "steam" and blocks.blocked(sid):
+                    return self.send_empty(404)
                 self.gate("embed", key=f"p:{sid}", subject=sid)
                 profile = do_profile(sid)
                 o = embed.options(kind, one)
+                ttl = TTL
+                if o["in"] == "steam":
+                    # Drawn inside steamcommunity.com by the Companion, where
+                    # the mark is compulsory and free text is not allowed:
+                    # embed.in_steam() is where the reasons are written down.
+                    #
+                    # The clock is shorter here than anywhere else this file
+                    # serves, because this card claims to be live. What the
+                    # picture says about somebody is only as current as four
+                    # caches in a row - cached() here, the max-age send_svg
+                    # writes, Cloudflare, and the reader's own browser - and a
+                    # persona that changed a minute ago should not keep being
+                    # drawn for a quarter of an hour on Valve's page.
+                    ttl = STEAM_EMBED_TTL
+                    try:
+                        o = embed.in_steam(kind, o, profile)
+                    except embed.Refused as refused:
+                        return self.send_svg(embed.refusal(refused, o), ttl)
                 if kind == "text":
-                    return self.send_text(embed.text_bars(profile, o), TTL)
+                    return self.send_text(embed.text_bars(profile, o), ttl)
                 draw = {"bars": embed.bars, "banner": embed.banner,
                         "badge": embed.badge, "artwork": embed.artwork}[kind]
-                return self.send_svg(draw(profile, o), TTL)
+                return self.send_svg(draw(profile, o), ttl)
 
             if url.path == "/versus.svg":
                 # The only picture on this service that is about two people, so
@@ -1879,16 +1912,29 @@ class Handler(BaseHTTPRequestHandler):
                 who, rival = one("q"), one("vs")
                 if not who or not rival:
                     raise Fail(400, "@err.bad_steamid")
+                inside = one("in") == "steam"
                 self.gate("embed", key=f"r:{who.lower()}")
                 mine = do_resolve(who)["steamid"]
+                # Either of them being blocked withdraws the card, because the
+                # card is about both. The second name is the one the tag chose
+                # rather than the profile it sits on, and that is exactly why it
+                # is checked too.
+                if inside and blocks.blocked(mine):
+                    return self.send_empty(404)
                 self.gate("embed", key=f"p:{mine}", subject=mine)
                 first = do_profile(mine)
                 self.gate("embed", key=f"r:{rival.lower()}")
                 theirs = do_resolve(rival)["steamid"]
+                if inside and blocks.blocked(theirs):
+                    return self.send_empty(404)
                 self.gate("embed", key=f"p:{theirs}", subject=theirs)
                 second = do_profile(theirs)
                 o = embed.options("versus", one)
-                return self.send_svg(embed.versus(first, second, o), TTL)
+                ttl = TTL
+                if o["in"] == "steam":
+                    ttl = STEAM_EMBED_TTL
+                    o = embed.in_steam("versus", o, first)
+                return self.send_svg(embed.versus(first, second, o), ttl)
 
             if url.path == "/game/theme":
                 # Which of the themed pages this appid is about to become, as a
@@ -2159,6 +2205,11 @@ if __name__ == "__main__":
     # request the moment this answers, and an empty ban list would let through
     # exactly the addresses that were shut out by the previous run.
     held = bans.init()
+    # The profiles this service will not draw. Before the socket for the same
+    # reason as the bans above: a card that was withdrawn must not come back for
+    # however long it takes this to load, and a deploy is exactly when somebody
+    # would notice it had.
+    blocks.init()
     # Same reason, one step weaker: the gate counts every request, so the tables
     # have to exist before the first one arrives. A census that fails is caught
     # and logged rather than fatal - it is the one thing here nothing depends on.

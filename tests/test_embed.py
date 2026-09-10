@@ -343,3 +343,113 @@ class ArtworkTest(EmbedTest):
         self.assertEqual(options("artwork", bg="face")["blur"], 22)
         self.assertEqual(options("artwork", bg="face", blur="0")["blur"], 0)
         self.assertEqual(options("artwork", bg="back")["blur"], 0)
+
+
+class InSteamTest(EmbedTest):
+    """The one place a card lands on a page whose rules are not its author's.
+
+    Everything above is about drawing well on somebody's blog. These are about
+    what changes when the same picture is drawn inside steamcommunity.com by the
+    Companion: the mark stops being optional, the only text that can reach the
+    card is text Steam is already printing, and the file that has never refused
+    anything refuses one thing.
+    """
+
+    def steam(self, kind, **kw):
+        o = options(kind, **{"in": "steam", **kw})
+        self.assertEqual(o["in"], "steam")
+        return embed.in_steam(kind, o, PROFILE)
+
+    def test_the_web_is_left_exactly_as_it_was(self):
+        # The default has to stay `web`, because every URL already pasted into a
+        # README was written without this parameter.
+        o = options("artwork", sign="compre aqui", foot="0")
+        self.assertEqual(o["in"], "web")
+        self.assertEqual(o["sign"], "compre aqui")
+        self.assertFalse(o["foot"])
+        self.assertEqual(options("badge", label="cs.money")["label"], "cs.money")
+
+    def test_the_mark_cannot_be_turned_off(self):
+        # foot=0 draws a card with nothing on it saying where it came from. On a
+        # blog that is the author's business; between two Valve showcases it is
+        # a panel that reads as one of Valve's.
+        for kind in ("bars", "artwork"):
+            with self.subTest(kind):
+                self.assertTrue(self.steam(kind, foot="0")["foot"])
+        self.assertTrue(self.steam("badge", logo="0")["logo"])
+
+    def test_the_signature_comes_from_the_persona_and_not_from_the_url(self):
+        o = self.steam("artwork", sign="cs.money")
+        self.assertEqual(o["sign"], "Gordziilla")
+        self.assertIn("Gordziilla", sign.fits(o["sign"]))
+
+    def test_a_name_that_cannot_be_written_is_not_written_wrong(self):
+        # sign.py draws strokes, not glyphs, and its tables are Latin. A Cyrillic
+        # persona comes back empty; "Ünal Çakır" comes back "Unal Cakr", because
+        # the dotless i has no glyph here and no accent to fold. Signing somebody
+        # else's name is worse than leaving the corner blank.
+        for persona in ("Гейб", "ガベン", "Ünal Çakır"):
+            with self.subTest(persona):
+                who = {"profile": {"persona": persona}}
+                self.assertEqual(embed.signature(who), "")
+
+    def test_decoration_is_not_a_letter(self):
+        # An emoji in a persona is ordinary on Steam, and dropping it loses
+        # nothing of the name - so it must not cost somebody their signature.
+        self.assertEqual(embed.signature({"profile": {"persona": "🎮 gamer"}}),
+                         "gamer")
+        self.assertEqual(embed.signature({"profile": {"persona": "xX_Sniper_Xx"}}),
+                         "xX_Sniper_Xx")
+
+    def test_a_custom_badge_label_is_refused(self):
+        o = options("badge", label="cs.money", **{"in": "steam"})
+        with self.assertRaises(embed.Refused):
+            embed.in_steam("badge", o, PROFILE)
+        # And without one it draws, because the badge itself is not the problem.
+        self.assertEqual(self.steam("badge")["label"], "")
+
+    def test_the_refusal_is_itself_a_well_formed_self_contained_picture(self):
+        # It arrives in an <img> like any other card, so it has to obey the same
+        # two rules as the rest of this file or the person it is meant for sees
+        # a broken frame and no reason.
+        o = options("badge", label="cs.money", **{"in": "steam"})
+        try:
+            embed.in_steam("badge", o, PROFILE)
+        except embed.Refused as refused:
+            for lang in embed.WORDS:
+                with self.subTest(lang):
+                    svg = embed.refusal(refused, {**o, "lang": lang})
+                    ET.fromstring(svg)
+                    self.assertEqual(svg.count("http"), 1, "only the namespace")
+                    self.assertIn(embed.WORDS[lang]["no_label"], svg)
+        else:
+            self.fail("a custom label should have been refused")
+
+    def test_a_refusal_is_wider_than_the_words_on_it(self):
+        o = options("badge", label="x", lang="ru", **{"in": "steam"})
+        try:
+            embed.in_steam("badge", o, PROFILE)
+        except embed.Refused as refused:
+            svg = embed.refusal(refused, o)
+            width = float(re.search(r'width="([\d.]+)"', svg).group(1))
+            text = embed.WORDS["ru"]["no_label"]
+            self.assertGreater(width, embed.text_width(text, 11))
+
+    def test_every_kind_survives_the_steam_path(self):
+        # in_steam() is a no-op for the cards that have nothing to force - the
+        # versus card and the banner print steamprofiler.org unconditionally, so
+        # there is no foot to switch back on - and it must stay a no-op rather
+        # than raising on a key it did not expect.
+        for kind in ("bars", "banner", "badge", "artwork", "versus", "text"):
+            with self.subTest(kind):
+                o = options(kind, **{"in": "steam"})
+                self.assertEqual(embed.in_steam(kind, o, PROFILE)["in"], "steam")
+
+    def test_the_cards_with_no_foot_carry_the_mark_anyway(self):
+        # Which is the reason in_steam has nothing to force on them, and the
+        # thing that would quietly stop being true if somebody made the mark
+        # optional there too.
+        o = options("banner", **{"in": "steam"})
+        self.assertIn("steamprofiler.org", embed.banner(PROFILE, o))
+        versus = options("versus", **{"in": "steam"})
+        self.assertIn("steamprofiler.org", embed.versus(PROFILE, RIVAL, versus))

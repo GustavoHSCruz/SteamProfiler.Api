@@ -154,6 +154,7 @@ WORDS = {
         "common": "both of them play", "only_a": "only the first",
         "only_b": "only the second", "ahead": "ahead", "tied": "level",
         "signed": "signed",
+        "no_label": "custom text is not allowed on a Steam profile",
     },
     "pt": {
         "hours": "horas", "h": "h", "games": "jogos", "played": "jogados",
@@ -168,6 +169,7 @@ WORDS = {
         "common": "os dois jogam", "only_a": "so do primeiro",
         "only_b": "so do segundo", "ahead": "na frente", "tied": "empate",
         "signed": "assinado",
+        "no_label": "texto proprio nao e permitido no perfil da Steam",
     },
     "ru": {
         "hours": "часов", "h": "ч", "games": "игр", "played": "запущено",
@@ -182,6 +184,7 @@ WORDS = {
         "common": "играют оба", "only_a": "только у первого",
         "only_b": "только у второго", "ahead": "впереди", "tied": "поровну",
         "signed": "подпись",
+        "no_label": "свой текст в профиле Steam не допускается",
     },
 }
 
@@ -1379,6 +1382,13 @@ HEX = re.compile(r"^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 # what stops a badge from being a paragraph.
 LABEL_MAX = 24
 
+# Where the picture is going to be looked at. Everything this module has ever
+# drawn was for `web`: somebody's blog, a README, a forum post, a page whose
+# rules are their own. `steam` is the one place that is not - the Companion
+# extension draws these inside steamcommunity.com, on Valve's own page, next to
+# Valve's own showcases - and the difference is not cosmetic. See in_steam().
+PLACES = ("web", "steam")
+
 
 def pick(value, allowed, fallback):
     return value if value in allowed else fallback
@@ -1435,6 +1445,7 @@ def options(kind, get):
         "theme": pick(get("theme"), THEMES, "dark"),
         "lang": pick(get("lang"), WORDS, "en"),
         "show": pick(get("show"), SHOWS, "top"),
+        "in": pick(get("in"), PLACES, "web"),
     }
     if kind == "badge":
         o.update({
@@ -1495,3 +1506,110 @@ def options(kind, get):
     # other styles allow, for that reason and no other.
     o["n"] = whole(get("n"), 1, 8 if o["style"] == "art" else 15, 5)
     return o
+
+
+# ── Inside Steam ─────────────────────────────────────────────────────
+# Everything above draws for a page whose rules belong to whoever owns it. What
+# follows is for the one page that does not: the Companion extension puts these
+# pictures inside steamcommunity.com, against Valve's markup, beside Valve's own
+# showcases, and two things that are nobody's business on a blog become somebody
+# else's business there.
+#
+# The first is whose name is on it. A card on a blog says whatever its author
+# typed; a card on a Steam profile is read as that profile talking, so the only
+# strings it may carry are the ones Steam is already printing on that same page
+# and already moderating. Free text would make this service the delivery
+# mechanism for whatever somebody wanted to put on a page Valve moderates.
+#
+# The second is whose card it looks like. An unmarked panel between two Valve
+# showcases reads as a Valve feature, which the Steam Web API terms name
+# specifically: Steam Data may not be presented so that it appears endorsed by
+# or affiliated with Valve.
+
+
+class Refused(Exception):
+    """A card this service draws for a blog and will not draw inside Steam.
+
+    Carries the word to print on the picture that goes in its place, because
+    the refusal still has to arrive as a picture: see refusal()."""
+
+    def __init__(self, word):
+        super().__init__(word)
+        self.word = word
+
+
+def signature(profile):
+    """The persona name as a signature, or "" when it cannot be written.
+
+    A signature is somebody's name, and the only acceptable failure is a silent
+    one. `sign.fits()` drops what its tables cannot draw: a Cyrillic or Japanese
+    persona comes back empty, and "Ünal Çakır" comes back "Unal Cakr", because
+    the dotless i has no glyph here and no accent to fold, so it simply leaves.
+    Signing somebody's name wrong is worse than not signing it, and the card is
+    identified by its foot either way.
+
+    Decoration is not a letter, though. Emoji in a persona are ordinary on Steam
+    and losing the controller in front of "🎮 gamer" loses nothing of the name.
+    So a character counts as lost only when it is one."""
+    folded = plain((profile.get("profile") or {}).get("persona") or "")
+    for ch in folded:
+        if ch == " " or ch in sign.GLYPHS:
+            continue
+        if unicodedata.category(ch)[0] in ("L", "N"):
+            return ""
+    return sign.fits(folded)
+
+
+def in_steam(kind, o, profile):
+    """`o` as it is allowed to be drawn inside a Steam profile page.
+
+    The mark is forced on wherever a card can hide it. `foot=0` and `logo=0` are
+    perfectly reasonable on a blog, where the page around the picture already
+    says where it came from; here they produce a panel with nothing on it to
+    tell a reader that Valve did not make it.
+
+    The signature stops coming from the query and starts coming from the
+    persona, and a custom badge label is refused outright.
+
+    That refusal is a deliberate exception to the rule written above the option
+    tables - that nothing here refuses, and a typo answers with a picture
+    anyway. The reason given there is that the reader of a README cannot fix a
+    URL somebody else wrote. On a Steam profile the reader *is* the person who
+    wrote it, looking at their own page, so the justification for falling back
+    silently inverts into a reason to say something. It holds only here."""
+    if kind == "badge" and o["label"]:
+        raise Refused("no_label")
+    out = dict(o)
+    for flag in ("foot", "logo"):
+        if flag in out:
+            out[flag] = True
+    if "sign" in out:
+        out["sign"] = signature(profile)
+    return out
+
+
+def refusal(refused, o):
+    """The picture drawn in place of a card that was refused.
+
+    This is served with 200 and not with an error status, on purpose. It arrives
+    in an <img>: a browser handed a 4xx draws the broken-image glyph and throws
+    the body away, so the one person who can act on the message - the author of
+    the tag, looking at their own profile - would be shown a torn page icon and
+    nothing else."""
+    theme = THEMES[o["theme"]]
+    text = words(o["lang"]).get(refused.word) or WORDS["en"][refused.word]
+    size, height = 11, 30
+    width = ceil(text_width(text, size)) + 40
+    out = [open_svg(width, height, text)]
+    out.append(f'<rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" '
+               f'rx="5" fill="{theme["panel"]}" stroke="{theme["line"]}"/>')
+    # An exclamation in a ring, drawn rather than written, for the same reason
+    # everything else here is drawn: no font is guaranteed on the other side.
+    out.append(f'<circle cx="16" cy="15" r="6.5" fill="none" '
+               f'stroke="{theme["accent"]}" stroke-width="1.5"/>')
+    out.append(f'<path d="M16 11.4v3.9M16 17.7v.6" stroke="{theme["accent"]}" '
+               f'stroke-width="1.5" stroke-linecap="round"/>')
+    out.append(f'<text x="29" y="19" font-family="{FONT}" font-size="{size}" '
+               f'fill="{theme["dim"]}">{esc(text)}</text>')
+    out.append("</svg>")
+    return "".join(out)

@@ -246,6 +246,37 @@ def backdrop(url):
                  lambda: _fetch_picture(url))
 
 
+def forget(url):
+    """Drop the cached copy of one profile picture. True if a file went.
+
+    Everything else in this module only ever adds, because a picture named after
+    the hash of its own URL never stops being the right answer for that URL, and
+    a profile that changes its avatar simply asks for a different file.
+
+    This exists for the one case that is not about the picture being stale. When
+    a profile is blocked - blocks.py, and the reason a block has to be possible
+    at all - the card stops being drawn, but the avatar it was drawn from is
+    already bytes on our disk, and nginx serves this directory directly. So the
+    block has to take the file with it. The caller passes the URL it read off
+    the profile; the name is recomputed here rather than stored anywhere,
+    because a steamid is not something this cache keeps."""
+    for hosts, directory, suffix in ((FACE_HOSTS, FACE_DIR, ".jpg"),
+                                     (BACK_HOSTS, BACK_DIR, ".bin")):
+        try:
+            host = (urllib.parse.urlparse(url).hostname or "").lower()
+        except (TypeError, ValueError):
+            return False
+        if host not in hosts:
+            continue
+        name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:24]
+        try:
+            (directory / f"{name}{suffix}").unlink()
+            return True
+        except OSError:
+            return False
+    return False
+
+
 def stats():
     """How much has been kept, for /healthz."""
     out = {}
