@@ -1247,7 +1247,8 @@ class Handler(BaseHTTPRequestHandler):
     # by robots.txt - or a page that only exists as an answer to something,
     # like the ban notice and the appeal form.
     SITEMAP_PAGES = ("/", "/about", "/blog", "/feedback", "/support", "/privacy",
-                     "/privacy/history", "/publishers", "/developers")
+                     "/privacy/history", "/publishers", "/developers",
+                     "/extension")
 
     # The franchise screens. Which exist is decided in the front end's two
     # catalogue files, so this is a copy, and it is a copy on purpose: the api
