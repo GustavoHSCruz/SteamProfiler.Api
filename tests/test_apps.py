@@ -132,6 +132,36 @@ class AppsTest(unittest.TestCase):
         self.known(70, name="Half-Life")
         self.assertIsNone(api.do_apps([70], "us", live=())["apps"]["70"]["trailer"])
 
+    def test_player_contract_is_small_and_versioned(self):
+        self.known(620, name="Portal 2", movies=[{
+            "id": 2, "name": "Portal 2 trailer", "thumbnail": "poster.jpg",
+            "highlight": True,
+            "mp4": {"max": "https://cdn/movie_max.mp4", "480": "https://cdn/movie480.mp4"},
+            "webm": {"max": "https://cdn/movie_max.webm"},
+            "hls_h264": "https://video/master.m3u8",
+            "dash_h264": "https://video/manifest.mpd",
+        }])
+        out = api.do_player(620)
+        self.assertEqual(out["version"], 1)
+        self.assertEqual(out["state"], "ready")
+        self.assertEqual(out["title"], "Portal 2 trailer")
+        self.assertEqual(out["poster"], "poster.jpg")
+        self.assertEqual(out["media"]["mp4"], [
+            "https://cdn/movie_max.mp4", "https://cdn/movie480.mp4",
+        ])
+        self.assertEqual(out["media"]["webm"], ["https://cdn/movie_max.webm"])
+        self.assertEqual(out["media"]["hls"], "https://video/master.m3u8")
+        self.assertEqual(out["attribution"]["label"], "steamprofiler.org")
+        self.assertNotIn("reviews", out)
+        self.assertNotIn("price", out)
+
+    def test_player_distinguishes_pending_from_no_trailer(self):
+        self.assertEqual(api.do_player(99999)["state"], "pending")
+        self.known(70, name="Half-Life")
+        out = api.do_player(70)
+        self.assertEqual(out["state"], "absent")
+        self.assertIsNone(out["media"])
+
 
 if __name__ == "__main__":
     unittest.main()

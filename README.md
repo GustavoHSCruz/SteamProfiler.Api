@@ -118,6 +118,15 @@ opened.
 The service was built for a small independent site. Routes and payloads may
 evolve with its frontend; it is not currently a versioned third-party API.
 
+The exception is `GET /api/player?appid=<n>`, the deliberately small,
+cross-origin contract published for
+[SteamProfiler Player](https://github.com/GustavoHSCruz/SteamProfiler.Player).
+Its response carries `version: 1` and only the title, poster, storefront link,
+attribution and browser media sources for one highlighted trailer. A cold app
+answers `state: pending` while its store record is queued; a known app without
+a trailer answers `state: absent`; only `state: ready` carries media. This
+endpoint never exposes a Steam Web API key and sends no credentials to Steam.
+
 ## Admin panel
 
 The panel belongs to this repository, not to the public frontend: its browser

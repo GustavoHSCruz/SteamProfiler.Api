@@ -9,6 +9,7 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     GET  /resolve?q=<anything>      -> a steamid64
     GET  /profile?id=<steamid64>    -> the dashboard payload
     GET  /game?id=<steamid64>&appid=<n>
+    GET  /player?appid=<n>          -> versioned, CORS-enabled trailer payload
     GET  /meta?id=<steamid64>       -> prices and genres, out of the store cache
     GET  /unlocks?id=<steamid64>    -> one scan of the top of the library: the
                                        rarest unlocks, what is closest to a
@@ -517,6 +518,62 @@ def do_apps(appids, cc, live=()):
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "cc": meta.cc_of(cc),
         "apps": out,
+    }
+
+
+def do_player(appid):
+    """The small, stable media envelope third-party players may consume.
+
+    `/apps` belongs to the franchise screens and is allowed to grow with them.
+    A player needs much less: a title, a poster and the addresses Steam exposes
+    for one highlighted trailer.  Keeping that contract here stops an embed
+    from depending on an internal storefront payload.
+
+    A cold app is returned as ``pending`` and queued by do_apps().  That is an
+    answer rather than a long request held open while the store is thinking;
+    callers may retry after the response cache expires.
+    """
+    row = do_apps([appid], "us", live=())["apps"][str(appid)]
+    trailer = row.get("trailer")
+    if not row.get("known"):
+        state = "pending"
+    elif not trailer:
+        state = "absent"
+    else:
+        state = "ready"
+
+    media = None
+    if trailer:
+        # Arrays leave room for another codec without changing the contract.
+        # Maximum quality is deliberately first, matching the site player.
+        mp4 = [url for url in (trailer.get("max_mp4"), trailer.get("sd_mp4")) if url]
+        webm = [url for url in (trailer.get("max_webm"), trailer.get("sd_webm")) if url]
+        # Older catalogue rows know the movie id but predate the exact source
+        # URLs. Steam's conventional filenames keep those rows playable while
+        # the urgent detail refresh queued by do_apps() fills the real ones.
+        if not mp4 and not webm and not trailer.get("hls"):
+            base = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{trailer['id']}"
+            mp4 = [f"{base}/movie_max.mp4", f"{base}/movie480.mp4"]
+            webm = [f"{base}/movie_max_vp9.webm", f"{base}/movie480_vp9.webm"]
+        media = {
+            "hls": trailer.get("hls"),
+            "dash": trailer.get("dash"),
+            "mp4": mp4,
+            "webm": webm,
+        }
+
+    return {
+        "version": 1,
+        "appid": appid,
+        "state": state,
+        "title": (trailer or {}).get("name") or row.get("name"),
+        "poster": (trailer or {}).get("thumb"),
+        "media": media,
+        "store_url": f"https://store.steampowered.com/app/{appid}",
+        "attribution": {
+            "label": "steamprofiler.org",
+            "url": "https://steamprofiler.org/",
+        },
     }
 
 
@@ -1196,11 +1253,32 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         # nginx caches nothing; this is for the browser and any proxy in between.
         self.send_header("Cache-Control", f"public, max-age={ttl}" if ttl else "no-store")
+        # Only the deliberately public player contract opts into cross-origin
+        # reads.  The rest of the JSON API remains an implementation detail of
+        # this site's own frontend.
+        if getattr(self, "player_cors", False):
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
+    def do_OPTIONS(self):
+        """Preflight only the endpoint published for third-party players."""
+        if urlparse(self.path).path != "/player":
+            return self.send_empty(404)
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Accept")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
         url = urlparse(self.path)
+        # A handler can serve another request on a persistent connection. Set
+        # this for every GET so a prior /player response cannot make an
+        # unrelated JSON route cross-origin by accident.
+        self.player_cors = url.path == "/player"
         q = parse_qs(url.query)
         one = lambda name: (q.get(name) or [""])[0].strip()
         try:
@@ -1312,6 +1390,22 @@ class Handler(BaseHTTPRequestHandler):
                 # what the disk will say either way.
                 unsettled = out["state"] == "unknown" or out["stale"]
                 return self.send_json(200, out, ttl=30 if unsettled else 3600)
+            if url.path == "/player":
+                # The only versioned JSON contract intended for use outside
+                # steamprofiler.org.  Set this before validation so errors are
+                # readable by the embedding page too, not hidden by CORS.
+                raw = one("appid")
+                if not raw.isdigit() or raw == "0" or len(raw) > 8:
+                    raise Fail(400, "@err.bad_appid")
+                appid = int(raw)
+                key = f"pl:{appid}"
+                self.gate("apps", key=key)
+
+                def player_ttl(value):
+                    return 20 if value.get("state") == "pending" else 600
+
+                out = cached(key, player_ttl, lambda: do_player(appid))
+                return self.send_json(200, out, ttl=player_ttl(out))
             if url.path in ("/game/public", "/game/public/meta"):
                 raw = one("appid")
                 if not raw.isdigit() or raw == "0" or len(raw) > 8:
