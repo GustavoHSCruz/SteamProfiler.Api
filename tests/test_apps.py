@@ -162,6 +162,34 @@ class AppsTest(unittest.TestCase):
         self.assertEqual(out["state"], "absent")
         self.assertIsNone(out["media"])
 
+    def test_companion_contract_is_small_and_versioned(self):
+        self.known(620, name="Portal 2", year=2011, date="19 Apr, 2011",
+                   movies=[{"id": 2, "name": "Trailer", "highlight": True,
+                            "thumbnail": "https://cdn/poster.jpg",
+                            "mp4": {"max": "https://cdn/movie.mp4"}}],
+                   reviews={"total": 1000, "positive": 980, "negative": 20,
+                            "score": 9, "description": "Overwhelmingly Positive"})
+        old_catalog = meta.public_catalog
+        old_players = api.fetch.fetch_current_players
+        try:
+            meta.public_catalog = lambda appid, cc, language: meta.lookup([appid])[appid]
+            api.fetch.fetch_current_players = lambda appid: {"players": 12345}
+            out = api.do_companion(620, "pt")
+        finally:
+            meta.public_catalog = old_catalog
+            api.fetch.fetch_current_players = old_players
+
+        self.assertEqual(out["version"], 1)
+        self.assertEqual(out["state"], "ready")
+        self.assertEqual(out["game"]["name"], "Portal 2")
+        self.assertEqual(out["reviews"]["positive_pct"], 98.0)
+        self.assertEqual(out["players"], 12345)
+        self.assertEqual(out["trailer"]["media"]["mp4"], ["https://cdn/movie.mp4"])
+        self.assertEqual(out["links"]["analysis"], "https://steamprofiler.org/g/620")
+        self.assertEqual(out["attribution"]["label"], "steamprofiler.org")
+        self.assertNotIn("achievements", out)
+        self.assertNotIn("news", out)
+
 
 if __name__ == "__main__":
     unittest.main()

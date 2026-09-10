@@ -6,7 +6,7 @@ import unittest
 import api
 
 
-class PlayerEndpointTest(unittest.TestCase):
+class PublicEndpointTest(unittest.TestCase):
     @staticmethod
     def handler(path="/player"):
         """A handler without a socket; enough surface to inspect its headers."""
@@ -22,7 +22,7 @@ class PlayerEndpointTest(unittest.TestCase):
 
     def test_player_json_is_cross_origin_and_versioned(self):
         handler = self.handler()
-        handler.player_cors = True
+        handler.public_cors = True
         payload = {"version": 1, "appid": 620, "state": "ready"}
         handler.send_json(200, payload, ttl=600)
         self.assertEqual(handler.status, 200)
@@ -35,12 +35,17 @@ class PlayerEndpointTest(unittest.TestCase):
         handler.send_json(400, {"error": "bad"})
         self.assertNotIn("Access-Control-Allow-Origin", handler.sent_headers)
 
-    def test_options_only_publishes_the_player(self):
+    def test_options_only_publishes_versioned_contracts(self):
         handler = self.handler()
         handler.do_OPTIONS()
         self.assertEqual(handler.status, 204)
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
         self.assertIn("GET", handler.sent_headers["Access-Control-Allow-Methods"])
+
+        companion = self.handler("/companion")
+        companion.do_OPTIONS()
+        self.assertEqual(companion.status, 204)
+        self.assertEqual(companion.sent_headers["Access-Control-Allow-Origin"], "*")
 
         other = self.handler("/profile")
         other.send_empty = lambda status: setattr(other, "status", status)

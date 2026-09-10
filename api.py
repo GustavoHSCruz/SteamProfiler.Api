@@ -10,6 +10,7 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     GET  /profile?id=<steamid64>    -> the dashboard payload
     GET  /game?id=<steamid64>&appid=<n>
     GET  /player?appid=<n>          -> versioned, CORS-enabled trailer payload
+    GET  /companion?appid=<n>       -> versioned, CORS-enabled store companion
     GET  /meta?id=<steamid64>       -> prices and genres, out of the store cache
     GET  /unlocks?id=<steamid64>    -> one scan of the top of the library: the
                                        rarest unlocks, what is closest to a
@@ -570,6 +571,98 @@ def do_player(appid):
         "poster": (trailer or {}).get("thumb"),
         "media": media,
         "store_url": f"https://store.steampowered.com/app/{appid}",
+        "attribution": {
+            "label": "steamprofiler.org",
+            "url": "https://steamprofiler.org/",
+        },
+    }
+
+
+def do_companion(appid, language="en"):
+    """The small public game envelope consumed by the browser extension.
+
+    The public game page also knows achievements and news, but collecting them
+    here would make opening an ordinary Steam store page spend calls on facts
+    the companion never draws. Catalogue, reviews and the live count have
+    independent caches, so this endpoint stays useful without inheriting the
+    site's internal payload or its cost.
+    """
+    row = meta.public_catalog(appid, "us", language)
+    catalog = row.get("catalog") or {}
+
+    if row.get("exists") is False:
+        state = "absent"
+    elif not catalog:
+        state = "pending"
+    else:
+        state = "ready"
+
+    players = None
+    if state == "ready":
+        try:
+            players = fetch.fetch_current_players(appid).get("players")
+        except fetch.SteamError:
+            # The live count is an enhancement to an enhancement. A Steam
+            # outage should leave the catalogue and the link usable rather
+            # than fail all of the extension panel.
+            pass
+
+    reviews = row.get("reviews") or {}
+    total = reviews.get("total") or 0
+    movies = catalog.get("movies") or []
+    movie = next((item for item in movies if item.get("highlight")),
+                 movies[0] if movies else None)
+    trailer = None
+    if movie and movie.get("id"):
+        mp4 = movie.get("mp4") or {}
+        webm = movie.get("webm") or {}
+        mp4_sources = [url for url in (mp4.get("max"), mp4.get("480")) if url]
+        webm_sources = [url for url in (webm.get("max"), webm.get("480")) if url]
+        if not mp4_sources and not webm_sources and not movie.get("hls_h264"):
+            base = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{movie['id']}"
+            mp4_sources = [f"{base}/movie_max.mp4", f"{base}/movie480.mp4"]
+            webm_sources = [f"{base}/movie_max_vp9.webm", f"{base}/movie480_vp9.webm"]
+        trailer = {
+            "state": "ready",
+            "title": movie.get("name") or catalog.get("name"),
+            "poster": movie.get("thumbnail"),
+            "media": {
+                "hls": movie.get("hls_h264"),
+                "dash": movie.get("dash_h264"),
+                "mp4": mp4_sources,
+                "webm": webm_sources,
+            },
+        }
+    images = catalog.get("images") or {}
+    return {
+        "version": 1,
+        "appid": appid,
+        "state": state,
+        "game": {
+            "name": catalog.get("name") or row.get("name"),
+            "released": (catalog.get("release") or {}).get("date"),
+            "year": row.get("year"),
+            "free": row.get("free"),
+            "image": images.get("header") or images.get("capsule"),
+            "platforms": catalog.get("platforms") or {},
+        },
+        "reviews": ({
+            "total": total,
+            "positive": reviews.get("positive"),
+            "positive_pct": round((reviews.get("positive") or 0) * 100 / total, 1),
+            "description": reviews.get("description"),
+        } if total else None),
+        "players": players,
+        "trailer": trailer or {
+            "state": "pending" if state == "pending" else "absent",
+            "title": None,
+            "poster": None,
+            "media": None,
+        },
+        "links": {
+            "analysis": f"https://steamprofiler.org/g/{appid}",
+            "store": f"https://store.steampowered.com/app/{appid}/",
+        },
         "attribution": {
             "label": "steamprofiler.org",
             "url": "https://steamprofiler.org/",
@@ -1253,17 +1346,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         # nginx caches nothing; this is for the browser and any proxy in between.
         self.send_header("Cache-Control", f"public, max-age={ttl}" if ttl else "no-store")
-        # Only the deliberately public player contract opts into cross-origin
-        # reads.  The rest of the JSON API remains an implementation detail of
-        # this site's own frontend.
-        if getattr(self, "player_cors", False):
+        # Only deliberately published, versioned contracts opt into
+        # cross-origin reads. The rest of the JSON API remains an
+        # implementation detail of this site's own frontend.
+        if getattr(self, "public_cors", False):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
-        """Preflight only the endpoint published for third-party players."""
-        if urlparse(self.path).path != "/player":
+        """Preflight only the two versioned contracts published for reuse."""
+        if urlparse(self.path).path not in ("/player", "/companion"):
             return self.send_empty(404)
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -1276,9 +1369,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         # A handler can serve another request on a persistent connection. Set
-        # this for every GET so a prior /player response cannot make an
+        # this for every GET so a prior public response cannot make an
         # unrelated JSON route cross-origin by accident.
-        self.player_cors = url.path == "/player"
+        self.public_cors = url.path in ("/player", "/companion")
         q = parse_qs(url.query)
         one = lambda name: (q.get(name) or [""])[0].strip()
         try:
@@ -1391,9 +1484,9 @@ class Handler(BaseHTTPRequestHandler):
                 unsettled = out["state"] == "unknown" or out["stale"]
                 return self.send_json(200, out, ttl=30 if unsettled else 3600)
             if url.path == "/player":
-                # The only versioned JSON contract intended for use outside
-                # steamprofiler.org.  Set this before validation so errors are
-                # readable by the embedding page too, not hidden by CORS.
+                # One of the two versioned JSON contracts intended for use
+                # outside steamprofiler.org. Set CORS before validation so an
+                # embedding page can read errors too.
                 raw = one("appid")
                 if not raw.isdigit() or raw == "0" or len(raw) > 8:
                     raise Fail(400, "@err.bad_appid")
@@ -1406,6 +1499,21 @@ class Handler(BaseHTTPRequestHandler):
 
                 out = cached(key, player_ttl, lambda: do_player(appid))
                 return self.send_json(200, out, ttl=player_ttl(out))
+            if url.path == "/companion":
+                raw = one("appid")
+                if not raw.isdigit() or raw == "0" or len(raw) > 8:
+                    raise Fail(400, "@err.bad_appid")
+                appid = int(raw)
+                language = meta.language_of(one("l"))
+                key = f"cp:{appid}:{language}"
+                self.gate("apps", key=key)
+
+                def companion_ttl(value):
+                    return 20 if value.get("state") == "pending" else 300
+
+                out = cached(key, companion_ttl,
+                             lambda: do_companion(appid, language))
+                return self.send_json(200, out, ttl=companion_ttl(out))
             if url.path in ("/game/public", "/game/public/meta"):
                 raw = one("appid")
                 if not raw.isdigit() or raw == "0" or len(raw) > 8:

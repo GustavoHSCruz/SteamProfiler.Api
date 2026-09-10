@@ -127,6 +127,13 @@ answers `state: pending` while its store record is queued; a known app without
 a trailer answers `state: absent`; only `state: ready` carries media. This
 endpoint never exposes a Steam Web API key and sends no credentials to Steam.
 
+`GET /api/companion?appid=<n>&l=<language>` is the other versioned public
+contract. It powers the Steam store panel from
+[SteamProfiler Companion](https://github.com/GustavoHSCruz/SteamProfiler.Companion)
+with catalogue identity, review totals, current players and the same trailer
+envelope. It deliberately excludes profiles, achievements and news. Both
+public contracts permit cross-origin reads and carry `version: 1`.
+
 ## Admin panel
 
 The panel belongs to this repository, not to the public frontend: its browser
