@@ -99,11 +99,20 @@ The main modules are `fetch.py` for Steam profiles, `meta.py` for store data,
 `cards.py` and `inv.py` for Community Market data, `fx.py` for exchange rates,
 `houses.py` for the publisher and developer index, `census.py` for aggregate
 traffic counts, and `og.py` and `embed.py` for the two kinds of picture this
-service draws - the link preview, and the charts, banners and badges meant to
-be pasted somewhere else. Everything `embed.py` produces is self-contained: key
-art and avatars are cached by `art.py` and inlined as data URIs, because a file
-that fetches anything at render time is a file that draws differently, or not
-at all, wherever it was pasted.
+service draws - the link preview, and the charts, banners, badges, versus cards
+and Steam artwork meant to be pasted or uploaded somewhere else. Everything
+`embed.py` produces is self-contained: key art, avatars and profile backgrounds
+are cached by `art.py` and inlined as data URIs, because a file that fetches
+anything at render time is a file that draws differently, or not at all,
+wherever it was pasted. `sign.py` sits beside it for the same reason - the
+artwork can be signed in a hand, and there is no way to ship a script face to a
+file that must carry its own letters, so the letters are strokes.
+
+The artwork has one case this service never sees. A visitor can put a picture of
+their own behind their figures, and `embed.py` draws the artwork with an empty
+slot where it goes: the browser decodes the file, composites it and saves the
+result. Nothing is uploaded, nothing is written to this disk, and that variant
+therefore has no dynamic URL - there would be nothing for it to serve.
 
 `houses.py` is worth one paragraph because its source is incomplete and the
 module is shaped around that. It fills weekly from SteamSpy's `request=all`,

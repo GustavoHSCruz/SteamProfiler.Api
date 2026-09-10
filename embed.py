@@ -39,6 +39,7 @@ import unicodedata
 from math import ceil
 
 import art
+import sign
 
 # ── Paint ────────────────────────────────────────────────────────────
 # The site's own palette, plus two the site does not use. `light` is for a page
@@ -48,17 +49,19 @@ THEMES = {
     "dark": {
         "bg": "#0b0a0e", "panel": "#131219", "line": "#282631",
         "text": "#eeecf3", "dim": "#8e8a9b", "accent": "#ffb454",
-        "rest": "#26232f",
+        "rest": "#26232f", "rival": "#6ea8ff",
     },
     "light": {
         "bg": "#ffffff", "panel": "#f4f2f7", "line": "#dcd8e4",
         "text": "#1b1a20", "dim": "#6b6779", "accent": "#c97f22",
-        "rest": "#e6e2ec",
+        "rest": "#e6e2ec", "rival": "#2f6ad0",
     },
     "steam": {
         "bg": "#1b2838", "panel": "#16202d", "line": "#2a475e",
         "text": "#c7d5e0", "dim": "#8f98a0", "accent": "#66c0f4",
-        "rest": "#233447",
+        # Steam's own blue is already the accent on this theme, so the second
+        # profile cannot also be blue: here the rival wears the amber.
+        "rest": "#233447", "rival": "#ffb454",
     },
 }
 
@@ -148,6 +151,9 @@ WORDS = {
         "since": "on Steam since", "per_day": "hours a day", "snapshot": "snapshot of",
         "achievements": "achievements", "badges": "badges", "now": "playing now",
         "nothing": "nothing yet", "of_it": "of the clock",
+        "common": "both of them play", "only_a": "only the first",
+        "only_b": "only the second", "ahead": "ahead", "tied": "level",
+        "signed": "signed",
     },
     "pt": {
         "hours": "horas", "h": "h", "games": "jogos", "played": "jogados",
@@ -159,6 +165,9 @@ WORDS = {
         "since": "na Steam desde", "per_day": "horas por dia", "snapshot": "retrato de",
         "achievements": "conquistas", "badges": "insignias", "now": "jogando agora",
         "nothing": "nada ainda", "of_it": "do relogio",
+        "common": "os dois jogam", "only_a": "so do primeiro",
+        "only_b": "so do segundo", "ahead": "na frente", "tied": "empate",
+        "signed": "assinado",
     },
     "ru": {
         "hours": "часов", "h": "ч", "games": "игр", "played": "запущено",
@@ -170,6 +179,9 @@ WORDS = {
         "since": "в Steam с", "per_day": "часов в день", "snapshot": "снимок",
         "achievements": "достижений", "badges": "значков", "now": "играет",
         "nothing": "пока ничего", "of_it": "от всего",
+        "common": "играют оба", "only_a": "только у первого",
+        "only_b": "только у второго", "ahead": "впереди", "tied": "поровну",
+        "signed": "подпись",
     },
 }
 
@@ -386,13 +398,35 @@ def stamp(profile):
     return at or time.strftime("%Y-%m-%d", time.gmtime())
 
 
-def data_uri(blob):
-    return "data:image/jpeg;base64," + base64.b64encode(blob).decode("ascii")
+def data_uri(blob, mime="image/jpeg"):
+    return f"data:{mime};base64," + base64.b64encode(blob).decode("ascii")
 
 
 # A capsule is 10 to 20 KB. Anything past this is not a capsule, and inlining it
 # would put a megabyte of base64 into a file somebody pastes into a README.
 MAX_PICTURE = 90 * 1024
+
+# A profile background is a wall: 1438x810 off Steam, a few hundred KB. The
+# only picture here allowed to be one is the artwork's, which is not pasted
+# into a README - it is downloaded, and then uploaded to Steam as artwork.
+MAX_WALL = 1500 * 1024
+
+
+def wall(url):
+    """A profile background as a data URI, or None.
+
+    Not picture(): these arrive as JPEG or as PNG depending on which item was
+    bought, so the format is read off the bytes rather than assumed. A data URI
+    with the wrong mime on it draws as nothing, which would be a black artwork
+    for every second person who has a background at all."""
+    try:
+        blob = art.backdrop(url)
+    except Exception:
+        return None
+    if not blob or len(blob) > MAX_WALL:
+        return None
+    mime = art.sniff(blob)
+    return data_uri(blob, mime) if mime else None
 
 
 def picture(getter, *args):
@@ -592,18 +626,24 @@ def avatar_uri(profile):
     return picture(art.avatar, url) if url else None
 
 
-def face(profile, x, y, side, theme):
+def face(profile, x, y, side, theme, key="f", radius=6):
     """The avatar, or the site's mark on a panel when Steam has no picture or
-    the fetch did not come back."""
+    the fetch did not come back.
+
+    `key` names the clip path. It has a default because three of the four
+    pictures here only ever draw one avatar - but the versus card draws two,
+    and two <clipPath id="f"> in one document is one clip path and a second
+    avatar wearing the first one's corner."""
     uri = avatar_uri(profile)
     if uri:
-        return (f'<g><clipPath id="f"><rect x="{x:.0f}" y="{y:.0f}" '
-                f'width="{side:.0f}" height="{side:.0f}" rx="6"/></clipPath>'
+        return (f'<g><clipPath id="{key}"><rect x="{x:.0f}" y="{y:.0f}" '
+                f'width="{side:.0f}" height="{side:.0f}" rx="{radius:.0f}"/>'
+                f'</clipPath>'
                 f'<image x="{x:.0f}" y="{y:.0f}" width="{side:.0f}" '
-                f'height="{side:.0f}" href="{uri}" clip-path="url(#f)" '
+                f'height="{side:.0f}" href="{uri}" clip-path="url(#{key})" '
                 f'preserveAspectRatio="xMidYMid slice"/></g>')
     return (f'<rect x="{x:.0f}" y="{y:.0f}" width="{side:.0f}" height="{side:.0f}" '
-            f'rx="6" fill="{theme["panel"]}"/>'
+            f'rx="{radius:.0f}" fill="{theme["panel"]}"/>'
             + mark(x + side * .28, y + side * .28, side * .44, theme["accent"]))
 
 
@@ -839,6 +879,32 @@ def metric(profile, key, lang):
     return w["hours"], f'{group(round(totals.get("hours") or 0), lang)} {w["h"]}'
 
 
+def metric_value(profile, key):
+    """The same thing metric() prints, as a number, or None when there is no
+    number in it.
+
+    The versus card needs both: a figure to write and a figure to measure a bar
+    against. `most played`, `playing now` and `on Steam since` are the three a
+    profile answers with a name or a year, and none of the three is a quantity
+    two people can be split between - so those rows are printed side by side
+    with no bar under them rather than with a bar that means nothing."""
+    totals = profile.get("totals") or {}
+    who = profile.get("profile") or {}
+    platform = profile.get("platform") or {}
+    return {
+        "hours": totals.get("hours"),
+        "games": totals.get("owned"),
+        "played": totals.get("played"),
+        "never": totals.get("never_played"),
+        "level": who.get("level"),
+        "linux": platform.get("linux_hours"),
+        "deck": platform.get("deck_hours"),
+        "achievements": who.get("achievements_total"),
+        "badges": who.get("badge_count"),
+        "per_day": totals.get("hours_per_day"),
+    }.get(key)
+
+
 def badge(profile, o):
     theme_name = o["theme"]
     theme = THEMES[theme_name]
@@ -902,6 +968,400 @@ def badge(profile, o):
     return "".join(out)
 
 
+# ── Two profiles ─────────────────────────────────────────────────────
+# The versus page has existed on the site since the treemap did. This is the
+# part of it that leaves: two people, the same figures for both, and one bar
+# per figure split where they meet.
+#
+# Which figures is the visitor's to decide, the same way the banner's boxes
+# are. A card that always printed the same three would be a card that is right
+# for the person who wanted hours and wrong for the person who wanted the two
+# Linux clocks against each other.
+
+VERSUS_ROWS = 6
+DEFAULT_VERSUS = ("hours", "games", "played")
+
+
+def split(x, y, width, a, b, theme, height=7):
+    """One bar with two owners, meeting where their two figures do.
+
+    A pair with nothing in it - two profiles that have both played zero hours
+    on Linux - is drawn as an empty track and not as a half each: a fifty-fifty
+    split is a statement about two numbers, and there are no numbers here."""
+    total = (a or 0) + (b or 0)
+    out = [f'<rect x="{x:.0f}" y="{y:.0f}" width="{width:.0f}" '
+           f'height="{height}" rx="{height / 2:.1f}" fill="{theme["rest"]}"/>']
+    if total <= 0:
+        return "".join(out)
+    left = width * ((a or 0) / total)
+    out.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{left:.1f}" '
+               f'height="{height}" rx="{height / 2:.1f}" fill="{theme["accent"]}"/>')
+    out.append(f'<rect x="{x + left:.1f}" y="{y:.0f}" width="{width - left:.1f}" '
+               f'height="{height}" rx="{height / 2:.1f}" fill="{theme["rival"]}"/>')
+    return "".join(out)
+
+
+def versus(a, b, o):
+    """Two profiles on one card.
+
+    Laid out as three bands and not as two columns: a head with both faces, a
+    band of chosen figures, and whatever height is left spent on the games both
+    of them own. Two columns would put each person's figures under their own
+    face, which reads as two cards printed side by side - and the whole point
+    of this one is the bar in the middle of every row."""
+    width = o["w"]
+    theme = THEMES[o["theme"]]
+    lang, w = o["lang"], words(o["lang"])
+    pad = 16
+    inner = width - pad * 2
+    name_a = plain((a.get("profile") or {}).get("persona") or "")
+    name_b = plain((b.get("profile") or {}).get("persona") or "")
+
+    # The overlap, worked out before the height is, because how many rows of it
+    # there are is what the height has to hold.
+    mine = {g.get("appid"): g for g in (b.get("library") or []) if g.get("appid")}
+    common = []
+    for g in (a.get("library") or []):
+        other = mine.get(g.get("appid"))
+        if other is not None:
+            common.append((plain(g.get("name")), g.get("hours") or 0,
+                           other.get("hours") or 0))
+    common.sort(key=lambda row: -(row[1] + row[2]))
+    rows = common[:o["games"]]
+
+    face_side = 54
+    head_h = face_side + 34
+    row_h = 40
+    games_h = (26 + len(rows) * 30) if rows else 0
+    height = head_h + len(o["rows"]) * row_h + games_h + 30
+
+    out = [open_svg(width, height, f"{name_a} vs {name_b}, steamprofiler.org")]
+    out.append(f'<rect width="{width}" height="{height}" rx="10" '
+               f'fill="{theme["bg"]}" stroke="{theme["line"]}"/>')
+
+    # ── The head ─────────────────────────────────────────────────────
+    out.append(face(a, pad, 14, face_side, theme, key="fa"))
+    out.append(face(b, width - pad - face_side, 14, face_side, theme, key="fb"))
+    # The names get whatever is left after the two faces and the word between
+    # them, halved. A name too long for its half is trimmed rather than allowed
+    # to run under the other one.
+    room = (inner - face_side * 2 - 44) / 2
+    left = pad + face_side + 10
+    right = width - pad - face_side - 10
+    for x, name, colour, anchor in ((left, name_a, theme["accent"], "start"),
+                                    (right, name_b, theme["rival"], "end")):
+        out.append(f'<text x="{x:.0f}" y="36" text-anchor="{anchor}" '
+                   f'font-family="{FONT}" font-size="14" font-weight="bold" '
+                   f'fill="{colour}">{esc(clip(name, 14, room))}</text>')
+    for x, one, anchor in ((left, a, "start"), (right, b, "end")):
+        totals = one.get("totals") or {}
+        line = (f'{group(round(totals.get("hours") or 0), lang)} {w["h"]} · '
+                f'{group(totals.get("played") or 0, lang)} {w["played"]}')
+        out.append(f'<text x="{x:.0f}" y="52" text-anchor="{anchor}" '
+                   f'font-family="{FONT}" font-size="10" fill="{theme["dim"]}">'
+                   f'{esc(clip(line, 10, room))}</text>')
+    out.append(f'<text x="{width / 2:.0f}" y="44" text-anchor="middle" '
+               f'font-family="{FONT}" font-size="13" font-weight="bold" '
+               f'letter-spacing="1.5" fill="{theme["dim"]}">VS</text>')
+    out.append(f'<rect x="{pad}" y="{head_h - 12}" width="{inner}" height="1" '
+               f'fill="{theme["line"]}"/>')
+
+    # ── One band per figure ──────────────────────────────────────────
+    y = head_h
+    for key in o["rows"]:
+        label, value_a = metric(a, key, lang)
+        _, value_b = metric(b, key, lang)
+        num_a, num_b = metric_value(a, key), metric_value(b, key)
+        # A name and not a number: half the row's width each, trimmed, and no
+        # bar under it. See metric_value().
+        budget = inner / 2 - 40
+        out.append(f'<text x="{pad}" y="{y + 12:.0f}" font-family="{FONT}" '
+                   f'font-size="12" font-weight="bold" fill="{theme["accent"]}">'
+                   f'{esc(clip(value_a, 12, budget))}</text>')
+        out.append(f'<text x="{width - pad}" y="{y + 12:.0f}" text-anchor="end" '
+                   f'font-family="{FONT}" font-size="12" font-weight="bold" '
+                   f'fill="{theme["rival"]}">{esc(clip(value_b, 12, budget))}</text>')
+        out.append(f'<text x="{width / 2:.0f}" y="{y + 12:.0f}" '
+                   f'text-anchor="middle" font-family="{FONT}" font-size="9" '
+                   f'letter-spacing=".6" fill="{theme["dim"]}">'
+                   f'{esc(clip(label.upper(), 9, inner / 2))}</text>')
+        if num_a is not None or num_b is not None:
+            out.append(split(pad, y + 20, inner, num_a, num_b, theme))
+        y += row_h
+
+    # ── What both of them own ────────────────────────────────────────
+    if rows:
+        out.append(f'<text x="{pad}" y="{y + 10:.0f}" font-family="{FONT}" '
+                   f'font-size="9" letter-spacing="1.2" fill="{theme["dim"]}">'
+                   f'{esc(w["common"].upper())}</text>')
+        out.append(f'<text x="{width - pad}" y="{y + 10:.0f}" text-anchor="end" '
+                   f'font-family="{FONT}" font-size="9" fill="{theme["dim"]}">'
+                   f'{esc(group(len(common), lang))}</text>')
+        y += 26
+        for name, hours_a, hours_b in rows:
+            side_a = f'{hours_text(hours_a, lang)} {w["h"]}'
+            side_b = f'{hours_text(hours_b, lang)} {w["h"]}'
+            room = inner - text_width(side_a, 10) - text_width(side_b, 10) - 24
+            out.append(f'<text x="{pad}" y="{y + 9:.0f}" font-family="{FONT}" '
+                       f'font-size="10" fill="{theme["accent"]}">{esc(side_a)}</text>')
+            out.append(f'<text x="{width - pad}" y="{y + 9:.0f}" text-anchor="end" '
+                       f'font-family="{FONT}" font-size="10" fill="{theme["rival"]}">'
+                       f'{esc(side_b)}</text>')
+            out.append(f'<text x="{width / 2:.0f}" y="{y + 9:.0f}" '
+                       f'text-anchor="middle" font-family="{FONT}" font-size="10" '
+                       f'fill="{theme["text"]}">{esc(clip(name, 10, room))}</text>')
+            out.append(split(pad, y + 15, inner, hours_a, hours_b, theme, height=5))
+            y += 30
+
+    out.append(f'<text x="{pad}" y="{height - 10}" font-family="{FONT}" '
+               f'font-size="9" fill="{theme["dim"]}">steamprofiler.org</text>')
+    out.append(f'<text x="{width - pad}" y="{height - 10}" text-anchor="end" '
+               f'font-family="{FONT}" font-size="9" fill="{theme["dim"]}">'
+               f'{esc(stamp(a))}</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+# ── Artwork ──────────────────────────────────────────────────────────
+# The one picture here that is not meant for a README. Steam's artwork upload
+# takes a whole image and shows it on the profile at whatever size it was
+# given, so this is the shape everything else on this page is not: large, with
+# a picture behind it, and made to be downloaded rather than linked.
+#
+# Four backdrops, and the fourth is the reason half of this exists. Somebody
+# can put their own photograph behind their figures - and that photograph never
+# arrives here. The browser reads the file, draws it onto a canvas at the size
+# of the artwork, and writes the result into the slot below before it ever
+# becomes a download. Nothing is uploaded, nothing is written to this disk, and
+# there is no address that could serve it back: an artwork with somebody's own
+# picture in it exists only as the file they saved.
+
+ARTWORKS = {
+    "wide":   (1920, 1080),
+    "back":   (1438, 810),
+    "square": (1000, 1000),
+    "tall":   (1000, 1500),
+}
+BACKDROPS = ("back", "face", "flat", "own")
+
+# The href the browser swaps a picture into. A fragment and not an empty
+# string: `href=""` resolves to the document itself in some renderers, and a
+# reference to an element that is not there draws nothing at all, which is
+# exactly what an artwork asked for over the plain URL should show.
+OWN_SLOT = "#own"
+
+# Six, on a canvas this size, against the banner's four. The reason is the same
+# one and it lands in a different place: four figures across a 728x90 strip is
+# a strip nobody reads, and six down the side of a 1000x1500 is a column.
+MAX_ART_FACTS = 6
+
+# A signature is a name, not a sentence. Fifteen characters is the longest
+# thing that still reads as one at the size this draws it.
+SIGN_MAX = 15
+
+
+def backdrop_uri(profile, kind):
+    """The picture that goes behind everything, as something an <image> takes.
+
+    `back` falls through to the avatar rather than to nothing: most accounts
+    have never bought a profile background, and a person who asked for their
+    own backdrop and got a flat rectangle would reasonably think it broke."""
+    if kind == "own":
+        return OWN_SLOT
+    if kind == "flat":
+        return None
+    who = profile.get("profile") or {}
+    if kind == "back":
+        url = ((who.get("items") or {}).get("background") or {}).get("image_large")
+        got = wall(url) if url else None
+        if got:
+            return got
+    return avatar_uri(profile)
+
+
+def shadow(x, y, size, text, colour, theme, anchor="start", weight="bold",
+           spacing=0, lifted=True):
+    """One line of text, and under it the same line in black at a quarter
+    strength one pixel lower.
+
+    Every other picture here draws its text on a colour it chose. This one
+    draws it on a photograph, and a photograph has a light patch in it
+    somewhere - so the same trick the badges already use is what keeps a name
+    legible whatever the reader put behind it."""
+    weight = f' font-weight="{weight}"' if weight else ""
+    track = f' letter-spacing="{spacing}"' if spacing else ""
+    common = (f'text-anchor="{anchor}" font-family="{FONT}" '
+              f'font-size="{size:.0f}"{weight}{track}')
+    out = []
+    if lifted:
+        out.append(f'<text x="{x:.0f}" y="{y + max(1, size * .05):.0f}" {common} '
+                   f'fill="#000" fill-opacity=".45">{esc(text)}</text>')
+    out.append(f'<text x="{x:.0f}" y="{y:.0f}" {common} fill="{colour}">'
+               f'{esc(text)}</text>')
+    return "".join(out)
+
+
+def artwork(profile, o):
+    """One large picture of a profile, for Steam's own artwork upload.
+
+    Everything is measured in `u`, a hundredth of the shorter side, so the same
+    layout holds across a 1920x1080 and a 1000x1500 without four sets of
+    numbers. What differs between the shapes is only how many columns the
+    figures go in and how much room is left for the library under them."""
+    width, height = ARTWORKS[o["preset"]]
+    theme = THEMES[o["theme"]]
+    lang, w = o["lang"], words(o["lang"])
+    who = profile.get("profile") or {}
+    persona = plain(who.get("persona") or "")
+    library = profile.get("library") or []
+    u = min(width, height) / 100.0
+    pad = 7 * u
+    inner = width - pad * 2
+
+    out = [open_svg(width, height, f"{persona} on Steam, steamprofiler.org")]
+    out.append(f'<rect width="{width}" height="{height}" fill="{theme["bg"]}"/>')
+
+    # ── What is behind it ────────────────────────────────────────────
+    uri = backdrop_uri(profile, o["bg"])
+    if uri:
+        # Drawn past every edge, because a blur pulls the transparent outside
+        # of a picture in over its own border: an avatar blown up to fill 1920
+        # pixels and blurred would otherwise have four soft grey margins.
+        over = 6 * u
+        blur = ""
+        if o["blur"]:
+            wide = o["blur"] * u / 8
+            out.append(f'<filter id="b" x="-12%" y="-12%" width="124%" '
+                       f'height="124%"><feGaussianBlur stdDeviation="{wide:.1f}"/>'
+                       f'</filter>')
+            blur = ' filter="url(#b)"'
+        out.append(f'<image x="{-over:.0f}" y="{-over:.0f}" '
+                   f'width="{width + over * 2:.0f}" '
+                   f'height="{height + over * 2:.0f}" href="{uri}"'
+                   f'{blur} preserveAspectRatio="xMidYMid slice"/>')
+    if o["fade"]:
+        out.append(f'<rect width="{width}" height="{height}" '
+                   f'fill="{theme["bg"]}" fill-opacity="{o["fade"] / 100:.2f}"/>')
+    lit = bool(uri)
+
+    def line(x, y, size, text, colour, anchor="start", weight="bold", spacing=0):
+        return shadow(x, y, size, text, colour, theme, anchor=anchor,
+                      weight=weight, spacing=spacing, lifted=lit)
+
+    # ── Who ──────────────────────────────────────────────────────────
+    y = pad
+    if o["face"]:
+        side = 20 * u
+        out.append(face(profile, pad, y, side, theme, key="who",
+                        radius=side * .5 if o["round"] else 4 * u))
+        text_x = pad + side + 4 * u
+    else:
+        side, text_x = 0, pad
+    name_size = 9 * u
+    out.append(line(text_x, y + (12.5 * u if side else 9 * u), name_size,
+                    clip(persona, name_size, width - text_x - pad),
+                    theme["text"]))
+    sub = []
+    if who.get("level") is not None:
+        sub.append(f'{w["level"]} {who["level"]}')
+    if who.get("member_since"):
+        sub.append(f'{w["since"]} {who["member_since"][:4]}')
+    if sub:
+        out.append(line(text_x, y + (18.5 * u if side else 15 * u), 3.4 * u,
+                        clip(" · ".join(sub), 3.4 * u, width - text_x - pad),
+                        theme["text"] if lit else theme["dim"], weight="",
+                        spacing=.6))
+    y += max(side, 17 * u) + 6 * u
+
+    # ── The figures ──────────────────────────────────────────────────
+    # Whatever has to be kept clear at the bottom: the footer always, and the
+    # signature above it when there is one.
+    foot = pad + (16 * u if o["sign"] else 5 * u)
+    cells = facts(profile, lang, o["facts"])
+    if cells:
+        cols = 3 if width >= height * 1.25 else 2
+        gap = 2.2 * u
+        box_w = (inner - gap * (cols - 1)) / cols
+        box_h = 11.5 * u
+        # Only whole rows, and only the ones there is room for. A box half off
+        # the bottom of an artwork is worse than one figure fewer.
+        room = max(0, int((height - y - foot + gap) // (box_h + gap)))
+        cells = cells[:room * cols]
+        for i, (value, label) in enumerate(cells):
+            bx = pad + (i % cols) * (box_w + gap)
+            by = y + (i // cols) * (box_h + gap)
+            out.append(f'<rect x="{bx:.0f}" y="{by:.0f}" width="{box_w:.0f}" '
+                       f'height="{box_h:.0f}" rx="{1.6 * u:.0f}" '
+                       f'fill="{theme["panel"]}" fill-opacity="{.55 if lit else 1:.2f}" '
+                       f'stroke="{theme["line"]}" stroke-opacity=".6"/>')
+            out.append(line(bx + 1.8 * u, by + 4.6 * u, 2.5 * u, label.upper(),
+                            theme["dim"], weight="", spacing=.7))
+            out.append(line(bx + 1.8 * u, by + 9.8 * u, 5.6 * u,
+                            clip(value, 5.6 * u, box_w - 3.6 * u), theme["accent"]))
+        # `cells` may have been emptied above by an artwork with no room left
+        # for a single row, and an empty grid takes no height.
+        if cells:
+            y += ((len(cells) + cols - 1) // cols) * (box_h + gap) + 2 * u
+
+    # ── The top of the library, if the shape left room for it ────────
+    if o["games"] and library:
+        row_h = 6 * u
+        fits = min(o["games"], max(0, int((height - y - foot - 5 * u) // row_h)))
+        if fits:
+            out.append(line(pad, y + 3 * u, 2.6 * u, w["top"].upper(),
+                            theme["accent"], weight="", spacing=1.2))
+            y += 6 * u
+            shown = library[:fits]
+            top = max((g.get("hours") or 0 for g in shown), default=1) or 1
+            for g in shown:
+                value = f'{hours_text(g.get("hours"), lang)} {w["h"]}'
+                budget = inner - text_width(value, 3.4 * u) - 3 * u
+                out.append(line(pad, y + 3 * u, 3.4 * u,
+                                clip(plain(g.get("name")), 3.4 * u, budget),
+                                theme["text"], weight=""))
+                out.append(line(width - pad, y + 3 * u, 3.4 * u, value,
+                                theme["dim"], anchor="end", weight=""))
+                track, fill = inner, max(2.0, inner * ((g.get("hours") or 0) / top))
+                out.append(f'<rect x="{pad:.0f}" y="{y + 4.4 * u:.0f}" '
+                           f'width="{track:.0f}" height="{1.2 * u:.1f}" '
+                           f'rx="{.6 * u:.1f}" fill="{theme["rest"]}" '
+                           f'fill-opacity="{.7 if lit else 1:.1f}"/>')
+                out.append(f'<rect x="{pad:.0f}" y="{y + 4.4 * u:.0f}" '
+                           f'width="{fill:.1f}" height="{1.2 * u:.1f}" '
+                           f'rx="{.6 * u:.1f}" fill="{theme["accent"]}"/>')
+                y += row_h
+
+    # ── The signature ────────────────────────────────────────────────
+    # Written last so it sits over everything, and measured before it is drawn
+    # so a long one is shrunk to the width it has rather than running off the
+    # corner. sign.py explains why it is strokes and not a font.
+    if o["sign"]:
+        cap = 11 * u
+        drawn = sign.fits(o["sign"])
+        if drawn:
+            room = inner * .62
+            while cap > 4 * u and sign.width(drawn, cap) > room:
+                cap -= u * .4
+            base = height - pad - 5 * u
+            at = width - pad - sign.width(drawn, cap)
+            if lit:
+                out.append(sign.draw(drawn, at + max(1, cap * .04),
+                                     base + max(1, cap * .04), cap, "#000", .45))
+            out.append(sign.draw(drawn, at, base, cap, theme["accent"]))
+            out.append(f'<rect x="{at:.0f}" y="{base + 1.6 * u:.0f}" '
+                       f'width="{sign.width(drawn, cap):.0f}" '
+                       f'height="{max(1, .3 * u):.1f}" rx="{.15 * u:.2f}" '
+                       f'fill="{theme["accent"]}" fill-opacity=".45"/>')
+
+    if o["foot"]:
+        out.append(line(pad, height - pad + 2 * u, 2.6 * u,
+                        f'steamprofiler.org · {stamp(profile)}',
+                        theme["text"] if lit else theme["dim"], weight="",
+                        spacing=.6))
+    out.append("</svg>")
+    return "".join(out)
+
+
 # ── What the URL is allowed to say ───────────────────────────────────
 # Every value is clamped or falls back, and nothing here refuses. A typo in the
 # query string of an <img> is a broken picture in somebody's README, and the
@@ -929,6 +1389,30 @@ def whole(value, low, high, fallback):
         return max(low, min(high, int(value)))
     except (TypeError, ValueError):
         return fallback
+
+
+def chosen(raw, ceiling, fallback):
+    """A comma-separated list of metrics, in the order it was written.
+
+    Shared by the banner's boxes, the versus card's rows and the artwork's
+    figures, because all three are the same question asked of the same menu -
+    which figures, and in which order - and three copies of this would be three
+    lists that stopped agreeing the moment a metric was added.
+
+    `none` is the one way to ask for none of them. An empty parameter cannot
+    mean it: a query string cannot tell "facts=" apart from a `facts` nobody
+    wrote, so a typo would silently empty the picture instead of falling back
+    to something worth looking at."""
+    words_in = [word.strip().lower() for word in (raw or "").split(",")
+                if word.strip()]
+    if words_in == ["none"]:
+        return ()
+    keys, seen = [], set()
+    for word in words_in:
+        if word in METRICS and word not in seen:
+            seen.add(word)
+            keys.append(word)
+    return tuple(keys[:ceiling]) or fallback
 
 
 def colour_of(value):
@@ -963,22 +1447,37 @@ def options(kind, get):
         return o
     if kind == "banner":
         o["preset"] = pick(get("preset") or get("size"), PRESETS, "blog")
-        # Which figures go in the boxes, in the order they were asked for. The
-        # word `none` is the one way to ask for a strip with no boxes at all -
-        # an empty parameter cannot mean it, because a query string cannot tell
-        # "facts=" apart from a `facts` nobody wrote. Everything else that is
-        # not a metric is a typo, and a typo falls back to the default rather
-        # than emptying the banner.
-        raw = [word.strip().lower() for word in get("facts").split(",") if word.strip()]
-        if raw == ["none"]:
-            o["facts"] = ()
-            return o
-        keys, seen = [], set()
-        for word in raw:
-            if word in METRICS and word not in seen:
-                seen.add(word)
-                keys.append(word)
-        o["facts"] = tuple(keys[:MAX_FACTS]) or DEFAULT_FACTS
+        # Which figures go in the boxes, in the order they were asked for.
+        o["facts"] = chosen(get("facts"), MAX_FACTS, DEFAULT_FACTS)
+        return o
+    if kind == "versus":
+        o.update({
+            "w": whole(get("w"), 360, 900, 640),
+            "rows": chosen(get("rows"), VERSUS_ROWS, DEFAULT_VERSUS),
+            # The games both of them own. Zero is a card of figures and
+            # nothing else, which is a card somebody can mean.
+            "games": whole(get("games"), 0, 10, 5),
+        })
+        return o
+    if kind == "artwork":
+        o["preset"] = pick(get("preset") or get("size"), ARTWORKS, "wide")
+        o["bg"] = pick(get("bg"), BACKDROPS, "back")
+        o.update({
+            "facts": chosen(get("facts"), MAX_ART_FACTS, DEFAULT_FACTS),
+            "games": whole(get("games"), 0, 12, 4),
+            "fade": whole(get("fade"), 0, 100, 55),
+            "face": get("face") not in ("0", "no", "false"),
+            "round": get("round") not in ("", "0", "no", "false"),
+            "foot": get("foot") not in ("0", "no", "false"),
+            # Folded and trimmed here rather than in the renderer, so what the
+            # picture draws and what the URL says are the same fifteen
+            # characters. sign.py drops whatever it cannot write after that.
+            "sign": plain(get("sign"))[:SIGN_MAX],
+        })
+        # An avatar is 184 pixels and this canvas is up to 1920 of them, so
+        # `face` gets a blur unless the visitor said otherwise. A real
+        # background is already the right size and gets none.
+        o["blur"] = whole(get("blur"), 0, 40, 22 if o["bg"] == "face" else 0)
         return o
     if kind == "text":
         o.update({"n": whole(get("n"), 1, 15, 5),

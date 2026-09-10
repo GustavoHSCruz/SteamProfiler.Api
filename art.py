@@ -9,12 +9,13 @@ writes the bytes under `data/art/`, and answers; every request after that is
 served by nginx straight off disk and never reaches Python at all - nginx tries
 the file first and only falls back to this module when it is missing.
 
-Two smaller caches sit beside it, both for embed.py, which draws pictures that
+Three smaller caches sit beside it, all for embed.py, which draws pictures that
 have to leave the site and therefore cannot point at Steam's CDN at all: the
-capsule of a game and the avatar of a profile, inlined into an SVG as data. Same
-arrangement as the heroes - fetched once, kept, never pre-fetched - in their own
-subdirectories, because nginx serves the top level of this one straight to the
-public and those two are read by Python and by nothing else.
+capsule of a game, the avatar of a profile, and the background a profile is
+wearing, each inlined into an SVG as data. Same arrangement as the heroes -
+fetched once, kept, never pre-fetched - in their own subdirectories, because
+nginx serves the top level of this one straight to the public and those three
+are read by Python and by nothing else.
 
 Nothing is pre-fetched. A library of 351 games would be 140 MB of art nobody
 asked for; the cache only ever holds the games whose pages were actually
@@ -56,6 +57,23 @@ FACE_HOSTS = ("avatars.steamstatic.com", "avatars.akamai.steamstatic.com",
               "steamcdn-a.akamaihd.net", "avatars.fastly.steamstatic.com",
               "community.cloudflare.steamstatic.com",
               "community.akamai.steamstatic.com")
+# The third one, and the newest: what a profile is wearing. The artwork
+# generator puts somebody's own Steam background behind their figures, and an
+# artwork is downloaded and uploaded to Steam rather than pasted into a README,
+# so this cache is allowed pictures an order of magnitude larger than the
+# capsules above. Same hosts as the frames and the animated avatars, which is
+# where fetch.py's ITEM_CDN points.
+BACK_DIR = ART_DIR / "backs"
+BACK_HOSTS = ("cdn.cloudflare.steamstatic.com", "cdn.akamai.steamstatic.com",
+              "community.cloudflare.steamstatic.com",
+              "community.akamai.steamstatic.com",
+              "community.fastly.steamstatic.com",
+              "shared.cloudflare.steamstatic.com",
+              "shared.akamai.steamstatic.com", "steamcdn-a.akamaihd.net")
+# A background is a wall, not a capsule: 1438x810 off Steam is a few hundred
+# kilobytes. Still a ceiling, because a bad answer must not be able to fill
+# the disk, and still far under what the artwork itself is allowed to weigh.
+MAX_BACK_BYTES = 3 * 1024 * 1024
 
 # Steam's art is a few hundred KB. Anything much larger is not what we asked
 # for, and writing it would mean a bad response could fill the disk.
@@ -90,6 +108,35 @@ def _fetch(url):
     # A JPEG starts with FF D8. Steam answers some misses with an HTML page and
     # a 200, and writing that as `<appid>.jpg` would cache the mistake.
     if len(body) > MAX_BYTES or not body.startswith(b"\xff\xd8"):
+        return None
+    return body
+
+
+# What a picture is, read off its first bytes. Steam answers some misses with
+# an HTML page and a 200, and a cache that trusted the extension would keep
+# that page under a name ending in .jpg for as long as the disk lasts.
+def sniff(body):
+    """`image/jpeg`, `image/png`, or None for something that is neither."""
+    if body[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if body[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return None
+
+
+def _fetch_picture(url, cap=MAX_BACK_BYTES):
+    """One JPEG or PNG off Steam, or None. The wider cousin of _fetch(): a
+    profile background is published in both formats and a cache that only took
+    one of them would be empty for half the people who bought one."""
+    req = urllib.request.Request(url, headers={"User-Agent": "steamprofiler.org"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            if r.status != 200:
+                return None
+            body = r.read(cap + 1)
+    except (urllib.error.URLError, OSError):
+        return None
+    if len(body) > cap or not sniff(body):
         return None
     return body
 
@@ -175,11 +222,35 @@ def avatar(url):
     return _keep(FACE_DIR / f"{name}.jpg", f"face:{name}", lambda: _fetch(url))
 
 
+def backdrop(url):
+    """One profile background, cached by the URL it came from.
+
+    Named after a hash of that URL for the same reason avatars are: Steam
+    names the file after the item, so a profile that changes its background is
+    a different URL and therefore a different file, and nothing here has to
+    work out when the old one stopped being true. A steamid is again not
+    something this cache should be storing the name of.
+
+    The extension is `.bin` and not `.jpg`, because these arrive as either
+    format and the bytes say which - the callers sniff it back out with
+    sniff(), and a file named after a format it is not would be a lie on disk
+    that nginx would eventually serve."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except (TypeError, ValueError):
+        return None
+    if host.lower() not in BACK_HOSTS:
+        return None
+    name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:24]
+    return _keep(BACK_DIR / f"{name}.bin", f"back:{name}",
+                 lambda: _fetch_picture(url))
+
+
 def stats():
     """How much has been kept, for /healthz."""
     out = {}
     for label, pattern in (("hero", "*.jpg"), ("caps", "caps/*.jpg"),
-                           ("faces", "faces/*.jpg")):
+                           ("faces", "faces/*.jpg"), ("backs", "backs/*.bin")):
         try:
             files = list(ART_DIR.glob(pattern))
         except OSError:

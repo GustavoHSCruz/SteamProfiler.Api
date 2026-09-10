@@ -31,6 +31,9 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     GET  /badge.svg?q=<anything>    being pasted somewhere we do not control
     GET  /bars.txt?q=<anything>     the same chart for a place that takes no
                                     picture at all
+    GET  /versus.svg?q=<a>&vs=<b>   two profiles on one card, figure by figure
+    GET  /artwork.svg?q=<anything>  the large one, made to be downloaded and
+                                    uploaded to Steam as artwork
 
     GET  /blog?lang=<xx>            -> the published posts, newest first
     GET  /blog/post?key=&lang=      -> one post, in the reader's language or the
@@ -128,7 +131,8 @@ MATE_FRIENDS = int(os.environ.get("MATE_FRIENDS", "20"))
 # Which renderer each embed path asks for. A table rather than four branches,
 # because the handler below is the same seven lines for all of them.
 EMBEDS = {"/bars.svg": "bars", "/banner.svg": "banner",
-          "/badge.svg": "badge", "/bars.txt": "text"}
+          "/badge.svg": "badge", "/bars.txt": "text",
+          "/artwork.svg": "artwork"}
 
 # Bodies are tiny; anything larger is not a message.
 MAX_BODY = 8 * 1024
@@ -1864,8 +1868,27 @@ class Handler(BaseHTTPRequestHandler):
                 if kind == "text":
                     return self.send_text(embed.text_bars(profile, o), TTL)
                 draw = {"bars": embed.bars, "banner": embed.banner,
-                        "badge": embed.badge}[kind]
+                        "badge": embed.badge, "artwork": embed.artwork}[kind]
                 return self.send_svg(draw(profile, o), TTL)
+
+            if url.path == "/versus.svg":
+                # The only picture on this service that is about two people, so
+                # the only one that is two lookups. Both are priced separately
+                # and in that order: a request naming one profile this address
+                # is already shut out of never reaches the second one.
+                who, rival = one("q"), one("vs")
+                if not who or not rival:
+                    raise Fail(400, "@err.bad_steamid")
+                self.gate("embed", key=f"r:{who.lower()}")
+                mine = do_resolve(who)["steamid"]
+                self.gate("embed", key=f"p:{mine}", subject=mine)
+                first = do_profile(mine)
+                self.gate("embed", key=f"r:{rival.lower()}")
+                theirs = do_resolve(rival)["steamid"]
+                self.gate("embed", key=f"p:{theirs}", subject=theirs)
+                second = do_profile(theirs)
+                o = embed.options("versus", one)
+                return self.send_svg(embed.versus(first, second, o), TTL)
 
             if url.path == "/game/theme":
                 # Which of the themed pages this appid is about to become, as a

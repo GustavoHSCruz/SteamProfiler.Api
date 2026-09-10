@@ -81,6 +81,12 @@ COST = {
     # The embeds. Same shape as the link preview: resolve, one profile, and a
     # drawing that costs nothing. Priced identically, and in KEY_SPENDING for
     # the same reason - the profile behind it is a handful of calls to Steam.
+    #
+    # The versus card is two profiles, and it is not listed separately: the
+    # handler spends this twice, once per person, which is the same arithmetic
+    # written where the second lookup actually happens. The artwork is one
+    # profile like the rest - the picture behind it comes off Steam's CDN,
+    # which has no key and no allowance of ours to spend.
     "embed": 12,
     # A warm one is a single row out of SQLite and a cold one is a trip to the
     # storefront, and the handler cannot know which it will be before it asks.
