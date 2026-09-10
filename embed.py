@@ -567,17 +567,24 @@ PRESETS = {
 }
 
 
-def facts(profile, lang, keep=3):
-    """The figures a banner puts in its own boxes, in the order they matter."""
-    w = words(lang)
-    totals = profile.get("totals") or {}
-    who = profile.get("profile") or {}
-    out = [(group(round(totals.get("hours") or 0), lang), w["hours"]),
-           (group(totals.get("owned") or 0, lang), w["games"]),
-           (group(totals.get("played") or 0, lang), w["played"])]
-    if who.get("level") is not None:
-        out.append((group(who["level"], lang), w["level"]))
-    return out[:keep]
+# What a banner shows when nobody said, and the most boxes one can hold. Four
+# is not a layout limit so much as an honesty one: a strip of five figures is
+# read as none of them.
+DEFAULT_FACTS = ("hours", "games", "played")
+MAX_FACTS = 4
+
+
+def facts(profile, lang, keys):
+    """The figures a banner puts in its own boxes, in the order asked for.
+
+    Same menu as the badges, and deliberately the same code: a box on a banner
+    and a badge on a README answer the same question, and two lists of what a
+    profile can be asked for would drift apart by the second one added."""
+    out = []
+    for key in keys:
+        label, value = metric(profile, key, lang)
+        out.append((value, label))
+    return out
 
 
 def avatar_uri(profile):
@@ -632,14 +639,27 @@ def banner(profile, o):
         out.append(face(profile, pad, (height - side) / 2 + 2, side, theme))
         left = pad + side + 14
 
-        keep = 2 if width < 600 else 3
-        cells = facts(profile, lang, keep)
         size = 20 if height >= 140 else 17
+        # A figure that is a game name rather than a number is trimmed before
+        # it is measured. `most played` and `playing now` are both a title, and
+        # one of those unmeasured makes every column as wide as it is.
+        cells = [(clip(v, size, 170), l)
+                 for v, l in facts(profile, lang, o["facts"])]
         # Laid out from the right edge inwards, each box as wide as the wider of
         # its two lines. Anything left over is the name's, which is the one
-        # thing here that can be trimmed without losing a figure.
-        column = max(max(text_width(v, size), text_width(l.upper(), 9) + 3)
-                     for v, l in cells) + 22
+        # thing here that can be trimmed without losing a figure - but only down
+        # to a point, and past that point a box is dropped instead. Which is why
+        # the count is decided here and not by the control that asked for four:
+        # a name squeezed to nothing to fit a fourth figure is a banner that
+        # says how many hours somebody has and not who.
+        floor = max(120, width * .22)
+        column = 0
+        while cells:
+            column = max(max(text_width(v, size), text_width(l.upper(), 9) + 3)
+                         for v, l in cells) + 22
+            if left + floor + column * len(cells) <= width - pad:
+                break
+            cells = cells[:-1]
         boxes, x = [], width - pad
         for value, label in reversed(cells):
             boxes.append((x, value, label))
@@ -654,7 +674,7 @@ def banner(profile, o):
                    f'font-family="{FONT}" font-size="{name_size}" font-weight="bold" '
                    f'fill="{theme["text"]}">{esc(clip(persona, name_size, room))}</text>')
         line = []
-        if who.get("level") is not None and len(cells) < 4:
+        if who.get("level") is not None and "level" not in o["facts"]:
             line.append(f'{w["level"]} {who["level"]}')
         if who.get("member_since"):
             line.append(f'{w["since"]} {who["member_since"][:4]}')
@@ -706,8 +726,9 @@ def banner(profile, o):
     # this height and one at the taller one, and two is the difference between a
     # card and a card with a hole under it.
     box, step, figure = (34, 42, 16) if height >= 300 else (28, 34, 14)
-    fits = max(0, min(3, int((height - y - foot) // step)))
-    for value, label in facts(profile, lang, fits):
+    fits = max(0, min(MAX_FACTS, int((height - y - foot) // step)))
+    for value, label in facts(profile, lang, o["facts"][:fits]):
+        value = clip(value, figure, width - pad * 2 - text_width(label.upper(), 9) - 30)
         out.append(f'<rect x="{pad}" y="{y - box / 2 + 2:.0f}" '
                    f'width="{width - pad * 2}" height="{box}" rx="6" '
                    f'fill="{theme["panel"]}"/>')
@@ -942,6 +963,22 @@ def options(kind, get):
         return o
     if kind == "banner":
         o["preset"] = pick(get("preset") or get("size"), PRESETS, "blog")
+        # Which figures go in the boxes, in the order they were asked for. The
+        # word `none` is the one way to ask for a strip with no boxes at all -
+        # an empty parameter cannot mean it, because a query string cannot tell
+        # "facts=" apart from a `facts` nobody wrote. Everything else that is
+        # not a metric is a typo, and a typo falls back to the default rather
+        # than emptying the banner.
+        raw = [word.strip().lower() for word in get("facts").split(",") if word.strip()]
+        if raw == ["none"]:
+            o["facts"] = ()
+            return o
+        keys, seen = [], set()
+        for word in raw:
+            if word in METRICS and word not in seen:
+                seen.add(word)
+                keys.append(word)
+        o["facts"] = tuple(keys[:MAX_FACTS]) or DEFAULT_FACTS
         return o
     if kind == "text":
         o.update({"n": whole(get("n"), 1, 15, 5),

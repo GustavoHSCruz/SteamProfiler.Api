@@ -152,6 +152,47 @@ class EmbedTest(unittest.TestCase):
                 ET.fromstring(svg)
                 self.assertIn(embed.BADGE_COLOURS[name], svg)
 
+    def test_a_banner_shows_the_figures_it_was_asked_for(self):
+        o = options("banner", preset="blog", facts="level,deck,hours", lang="en")
+        self.assertEqual(o["facts"], ("level", "deck", "hours"))
+        svg = embed.banner(PROFILE, o)
+        # In that order, left to right. Read off the x of each label and not off
+        # the order of the tags: a horizontal strip lays its boxes out from the
+        # right edge inwards, so the document holds them backwards on purpose.
+        placed = sorted((float(node.get("x")), (node.text or ""))
+                        for node in ET.fromstring(svg).iter()
+                        if node.tag.endswith("text") and node.get("x"))
+        labels = [text for _, text in placed if text.isupper()]
+        self.assertEqual(labels, ["LEVEL", "STEAM DECK", "HOURS"])
+
+    def test_a_banner_can_be_asked_for_no_figures(self):
+        o = options("banner", preset="blog", facts="none", lang="en")
+        self.assertEqual(o["facts"], ())
+        svg = embed.banner(PROFILE, o)
+        ET.fromstring(svg)
+        self.assertIn("Gordziilla", svg)
+        self.assertNotIn("HOURS", svg)
+
+    def test_a_typo_in_the_figures_falls_back_rather_than_emptying(self):
+        # A banner with no figures is a thing somebody can mean; a banner with
+        # no figures because they wrote "horas" is not.
+        self.assertEqual(options("banner", facts="horas,jogos")["facts"],
+                         embed.DEFAULT_FACTS)
+        self.assertEqual(options("banner", facts="")["facts"], embed.DEFAULT_FACTS)
+        # Repeats are one box, and five is four.
+        self.assertEqual(options("banner", facts="hours,hours")["facts"], ("hours",))
+        self.assertEqual(len(options(
+            "banner", facts="hours,games,played,level,deck")["facts"]),
+            embed.MAX_FACTS)
+
+    def test_a_narrow_banner_drops_a_box_before_it_drops_the_name(self):
+        # Four figures, each of them a game title, across the shortest strip
+        # there is. Something has to give, and it must not be who this is.
+        o = options("banner", preset="wide", facts="top,now,top,hours", lang="en")
+        svg = embed.banner(PROFILE, o)
+        ET.fromstring(svg)
+        self.assertIn("Gordziilla", svg)
+
     def test_the_colours_are_hex(self):
         for i in range(6):
             self.assertRegex(embed.ramp(i, 6, embed.THEMES["dark"]), r"^#[0-9a-f]{6}$")
