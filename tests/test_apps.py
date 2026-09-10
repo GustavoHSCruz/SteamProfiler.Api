@@ -37,6 +37,9 @@ class AppsTest(unittest.TestCase):
             "name": catalog.pop("name", None),
             "release": {"coming_soon": False, "date": catalog.pop("date", None)},
             "movies": catalog.pop("movies", []),
+            "categories": catalog.pop("categories", []),
+            "genres": catalog.pop("genres", []),
+            "achievements": catalog.pop("achievements", None),
         }
         meta._save(
             appid,
@@ -79,6 +82,33 @@ class AppsTest(unittest.TestCase):
         # and only one of them may be printed as a percentage.
         self.known(400, name="Portal", reviews={"total": 0, "positive": 0})
         self.assertIsNone(api.do_apps([400], "us", live=())["apps"]["400"]["reviews"])
+
+    def test_review_refresh_keeps_a_separate_thirty_day_summary(self):
+        old_get = meta._get_url
+        old_pace = meta._pace
+        calls = []
+        try:
+            def fake_get(url, timeout=None):
+                calls.append(url)
+                recent = "day_range=30" in url
+                return {"query_summary": {
+                    "review_score": 8 if recent else 9,
+                    "review_score_desc": "Very Positive",
+                    "total_positive": 90 if recent else 980,
+                    "total_negative": 10 if recent else 20,
+                    "total_reviews": 100 if recent else 1000,
+                }}
+            meta._get_url = fake_get
+            meta._pace = lambda **kwargs: True
+            self.assertTrue(meta._do_reviews(620))
+        finally:
+            meta._get_url = old_get
+            meta._pace = old_pace
+        reviews = meta.lookup([620])[620]["reviews"]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(reviews["total"], 1000)
+        self.assertEqual(reviews["recent"]["days"], 30)
+        self.assertEqual(reviews["recent"]["positive"], 90)
 
     def test_trailer_is_the_one_the_store_leads_with(self):
         self.known(620, name="Portal 2", movies=[
@@ -164,31 +194,75 @@ class AppsTest(unittest.TestCase):
 
     def test_companion_contract_is_small_and_versioned(self):
         self.known(620, name="Portal 2", year=2011, date="19 Apr, 2011",
+                   categories=[{"id": 2}, {"id": 22}], genres=[{"id": 3}],
+                   achievements={"total": 51},
                    movies=[{"id": 2, "name": "Trailer", "highlight": True,
                             "thumbnail": "https://cdn/poster.jpg",
                             "mp4": {"max": "https://cdn/movie.mp4"}}],
                    reviews={"total": 1000, "positive": 980, "negative": 20,
-                            "score": 9, "description": "Overwhelmingly Positive"})
+                            "score": 9, "description": "Overwhelmingly Positive",
+                            "recent": {"days": 30, "total": 100, "positive": 91,
+                                       "negative": 9, "description": "Very Positive"}})
         old_catalog = meta.public_catalog
         old_players = api.fetch.fetch_current_players
+        old_news = api.fetch.fetch_public_news
         try:
             meta.public_catalog = lambda appid, cc, language: meta.lookup([appid])[appid]
             api.fetch.fetch_current_players = lambda appid: {"players": 12345}
+            api.fetch.fetch_public_news = lambda appid: [{
+                "date": 1700000000, "title": "A real update",
+                "url": "https://store.steampowered.com/news/app/620/view/1",
+                "feed_name": "steam_community_announcements",
+            }]
             out = api.do_companion(620, "pt")
         finally:
             meta.public_catalog = old_catalog
             api.fetch.fetch_current_players = old_players
+            api.fetch.fetch_public_news = old_news
 
         self.assertEqual(out["version"], 1)
         self.assertEqual(out["state"], "ready")
         self.assertEqual(out["game"]["name"], "Portal 2")
         self.assertEqual(out["reviews"]["positive_pct"], 98.0)
+        self.assertEqual(out["reviews"]["recent"]["positive_pct"], 91.0)
         self.assertEqual(out["players"], 12345)
+        self.assertEqual(out["game"]["categories"], [2, 22])
+        self.assertEqual(out["game"]["achievements"], 51)
+        self.assertEqual(out["activity"]["latest_news_at"], 1700000000)
         self.assertEqual(out["trailer"]["media"]["mp4"], ["https://cdn/movie.mp4"])
         self.assertEqual(out["links"]["analysis"], "https://steamprofiler.org/g/620")
         self.assertEqual(out["attribution"]["label"], "steamprofiler.org")
-        self.assertNotIn("achievements", out)
         self.assertNotIn("news", out)
+
+    def test_personal_companion_keeps_only_progress_for_this_game(self):
+        old_profile = api.do_profile
+        old_achievements = api.fetch.fetch_achievements
+        try:
+            api.do_profile = lambda steamid: {
+                "top_games": [], "unplayed": [], "private_stat_block": {"not": "sent"},
+                "library": [{
+                    "appid": 620, "name": "Portal 2", "hours": 12.5,
+                    "minutes_2weeks": 120, "last_played": "2026-09-10",
+                }],
+            }
+            api.fetch.fetch_achievements = lambda appid: {
+                "unlocked": 8, "total": 10, "completion": 80.0, "missing": 2,
+                "easiest_missing": {"name": "Next", "rarity": 45.0,
+                                     "description": "not sent", "icon": "not sent"},
+                "hardest_missing": {"name": "Wall", "rarity": 1.0},
+                "list": [{"name": "not sent"}],
+            }
+            out = api.do_companion_profile("76561198000000000", 620)
+        finally:
+            api.do_profile = old_profile
+            api.fetch.fetch_achievements = old_achievements
+        self.assertEqual(out["state"], "ready")
+        self.assertEqual(out["hours"], 12.5)
+        self.assertEqual(out["achievements"]["completion"], 80.0)
+        self.assertEqual(out["achievements"]["easiest_missing"],
+                         {"name": "Next", "rarity": 45.0})
+        self.assertNotIn("list", out["achievements"])
+        self.assertNotIn("private_stat_block", out)
 
 
 if __name__ == "__main__":

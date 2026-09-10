@@ -47,6 +47,12 @@ class PublicEndpointTest(unittest.TestCase):
         self.assertEqual(companion.status, 204)
         self.assertEqual(companion.sent_headers["Access-Control-Allow-Origin"], "*")
 
+        personal = self.handler("/companion/profile")
+        personal.send_empty = lambda status: setattr(personal, "status", status)
+        personal.do_OPTIONS()
+        self.assertEqual(personal.status, 404)
+        self.assertNotIn("Access-Control-Allow-Origin", personal.sent_headers)
+
         other = self.handler("/profile")
         other.send_empty = lambda status: setattr(other, "status", status)
         other.do_OPTIONS()

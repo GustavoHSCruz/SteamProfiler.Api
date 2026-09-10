@@ -989,10 +989,10 @@ def _do_detail(appid, timeout=TIMEOUT, language="english"):
 
 
 def _do_reviews(appid, timeout=TIMEOUT):
-    query = urllib.parse.urlencode({
+    overall_query = urllib.parse.urlencode({
         "json": 1, "language": "all", "purchase_type": "all", "num_per_page": 0,
     })
-    body = _get_url(f"{REVIEWS}/{int(appid)}?{query}", timeout=timeout)
+    body = _get_url(f"{REVIEWS}/{int(appid)}?{overall_query}", timeout=timeout)
     summary = (body or {}).get("query_summary")
     if not isinstance(summary, dict):
         return False
@@ -1003,6 +1003,34 @@ def _do_reviews(appid, timeout=TIMEOUT):
         "negative": summary.get("total_negative"),
         "total": summary.get("total_reviews"),
     }
+    # Steam's documented `day_range` filter gives the panel a useful trend
+    # instead of repeating the lifetime score already printed by the store.
+    # It is deliberately best-effort: a failure here must not discard the
+    # lifetime summary that was fetched successfully above.
+    recent_query = urllib.parse.urlencode({
+        "json": 1, "filter": "all", "day_range": 30, "language": "all",
+        "purchase_type": "all", "num_per_page": 0,
+    })
+    recent = None
+    try:
+        # This is a second storefront request, so it takes a second paced slot
+        # instead of riding immediately behind the lifetime query above.
+        if _pace(max_wait=PAGE_WAIT):
+            recent_body = _get_url(
+                f"{REVIEWS}/{int(appid)}?{recent_query}", timeout=timeout)
+            recent = (recent_body or {}).get("query_summary")
+    except urllib.error.HTTPError:
+        # Preserve the lifetime result, but honour Steam's cooldown globally.
+        _note_429()
+    if isinstance(recent, dict):
+        review["recent"] = {
+            "days": 30,
+            "score": recent.get("review_score"),
+            "description": recent.get("review_score_desc"),
+            "positive": recent.get("total_positive"),
+            "negative": recent.get("total_negative"),
+            "total": recent.get("total_reviews"),
+        }
     _save(appid, reviews=json.dumps(review, separators=(",", ":")), reviews_at=_stamp())
     return True
 

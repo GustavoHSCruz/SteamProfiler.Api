@@ -11,6 +11,7 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     GET  /game?id=<steamid64>&appid=<n>
     GET  /player?appid=<n>          -> versioned, CORS-enabled trailer payload
     GET  /companion?appid=<n>       -> versioned, CORS-enabled store companion
+    GET  /companion/profile?id=<steamid64>&appid=<n> -> opt-in game progress
     GET  /meta?id=<steamid64>       -> prices and genres, out of the store cache
     GET  /unlocks?id=<steamid64>    -> one scan of the top of the library: the
                                        rarest unlocks, what is closest to a
@@ -222,8 +223,8 @@ def do_profile(steamid):
     return cached(f"p:{steamid}", TTL, produce)
 
 
-def do_game(steamid, appid):
-    profile = do_profile(steamid)
+def profile_game_row(profile, appid):
+    """One library row, including an owned game that has never been launched."""
     row = next((g for g in profile["top_games"] if g["appid"] == appid), None)
     if row is None:
         row = next((g for g in profile["library"] if g["appid"] == appid), None)
@@ -240,6 +241,12 @@ def do_game(steamid, appid):
                    "linux_minutes": 0, "minutes_2weeks": 0,
                    "os": {"windows": 0, "linux": 0, "mac": 0, "deck": 0},
                    "themed": appid in fetch.GAME_LAYOUTS, "never": True}
+    return row
+
+
+def do_game(steamid, appid):
+    profile = do_profile(steamid)
+    row = profile_game_row(profile, appid)
     if row is None:
         raise Fail(404, "@err.game_absent")
 
@@ -598,6 +605,7 @@ def do_companion(appid, language="en"):
         state = "ready"
 
     players = None
+    news = []
     if state == "ready":
         try:
             players = fetch.fetch_current_players(appid).get("players")
@@ -606,9 +614,16 @@ def do_companion(appid, language="en"):
             # outage should leave the catalogue and the link usable rather
             # than fail all of the extension panel.
             pass
+        try:
+            news = [item for item in fetch.fetch_public_news(appid)
+                    if item.get("feed_name") == "steam_community_announcements"]
+        except fetch.SteamError:
+            pass
 
     reviews = row.get("reviews") or {}
     total = reviews.get("total") or 0
+    recent = reviews.get("recent") or {}
+    recent_total = recent.get("total") or 0
     movies = catalog.get("movies") or []
     movie = next((item for item in movies if item.get("highlight")),
                  movies[0] if movies else None)
@@ -645,14 +660,31 @@ def do_companion(appid, language="en"):
             "free": row.get("free"),
             "image": images.get("header") or images.get("capsule"),
             "platforms": catalog.get("platforms") or {},
+            "categories": [item.get("id") for item in (catalog.get("categories") or [])
+                           if isinstance(item.get("id"), int)],
+            "genres": [item.get("id") for item in (catalog.get("genres") or [])
+                       if isinstance(item.get("id"), int)],
+            "achievements": ((catalog.get("achievements") or {}).get("total")),
         },
         "reviews": ({
             "total": total,
             "positive": reviews.get("positive"),
             "positive_pct": round((reviews.get("positive") or 0) * 100 / total, 1),
             "description": reviews.get("description"),
+            "recent": ({
+                "days": recent.get("days") or 30,
+                "total": recent_total,
+                "positive": recent.get("positive"),
+                "positive_pct": round((recent.get("positive") or 0) * 100 / recent_total, 1),
+                "description": recent.get("description"),
+            } if recent_total else None),
         } if total else None),
         "players": players,
+        "activity": ({
+            "latest_news_at": news[0].get("date"),
+            "latest_news_title": news[0].get("title"),
+            "latest_news_url": news[0].get("url"),
+        } if news else None),
         "trailer": trailer or {
             "state": "pending" if state == "pending" else "absent",
             "title": None,
@@ -667,6 +699,43 @@ def do_companion(appid, language="en"):
             "label": "steamprofiler.org",
             "url": "https://steamprofiler.org/",
         },
+    }
+
+
+def do_companion_profile(steamid, appid):
+    """The smallest personal envelope the opt-in store panel needs."""
+    profile = do_profile(steamid)
+    row = profile_game_row(profile, appid)
+    if row is None:
+        return {"version": 1, "appid": appid, "steamid": steamid,
+                "state": "absent"}
+    kind = fetch.GAME_LAYOUTS.get(appid, {"kind": "plain"})["kind"]
+    try:
+        fetch.set_user(steamid)
+        achievements = None if kind == "bare" else fetch.fetch_achievements(appid)
+    except fetch.SteamError as error:
+        raise Fail(403, str(error)) from error
+    achievements = achievements or {}
+    def compact(item):
+        return ({"name": item.get("name"), "rarity": item.get("rarity")}
+                if isinstance(item, dict) else None)
+    return {
+        "version": 1,
+        "appid": appid,
+        "steamid": steamid,
+        "state": "ready",
+        "hours": row.get("hours"),
+        "hours_2weeks": (round(row["minutes_2weeks"] / 60, 1)
+                          if row.get("minutes_2weeks") else None),
+        "last_played": row.get("last_played"),
+        "achievements": ({
+            "unlocked": achievements.get("unlocked"),
+            "total": achievements.get("total"),
+            "completion": achievements.get("completion"),
+            "missing": achievements.get("missing"),
+            "easiest_missing": compact(achievements.get("easiest_missing")),
+            "hardest_missing": compact(achievements.get("hardest_missing")),
+        } if achievements else None),
     }
 
 
@@ -1356,7 +1425,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_OPTIONS(self):
-        """Preflight only the two versioned contracts published for reuse."""
+        """Preflight only the two public game contracts published for reuse."""
         if urlparse(self.path).path not in ("/player", "/companion"):
             return self.send_empty(404)
         self.send_response(204)
@@ -1515,6 +1584,16 @@ class Handler(BaseHTTPRequestHandler):
                 out = cached(key, companion_ttl,
                              lambda: do_companion(appid, language))
                 return self.send_json(200, out, ttl=companion_ttl(out))
+            if url.path == "/companion/profile":
+                who = one("id")
+                raw = one("appid")
+                if not fetch.STEAMID_RE.match(who):
+                    raise Fail(400, "@err.bad_steamid")
+                if not raw.isdigit() or raw == "0" or len(raw) > 8:
+                    raise Fail(400, "@err.bad_appid")
+                self.gate("game", key=f"g:{who}:{raw}", subject=who)
+                return self.send_json(
+                    200, do_companion_profile(who, int(raw)), ttl=CLIENT_TTL)
             if url.path in ("/game/public", "/game/public/meta"):
                 raw = one("appid")
                 if not raw.isdigit() or raw == "0" or len(raw) > 8:

@@ -1112,28 +1112,41 @@ def fetch_public_live(appid):
     appid = int(appid)
     now = time.time()
     with _live_lock:
-        if len(_news_cache) >= 4000:
-            _news_cache.clear()
         players_hit = _players_held(appid, now)
-
-        news_hit = _news_cache.get(appid)
-        if not news_hit or news_hit[0] <= now:
-            raw = get_json_url(
-                f"{API}/ISteamNews/GetNewsForApp/v2/?appid={appid}&count=5&maxlength=500",
-                f"news for {appid}", timeout=8,
-            ) or {}
-            news = []
-            for item in (raw.get("appnews") or {}).get("newsitems", []):
-                excerpt, image = _news_excerpt(item.get("contents"))
-                news.append({
-                    "id": item.get("gid"), "title": item.get("title"),
-                    "url": item.get("url"), "author": item.get("author"),
-                    "date": item.get("date"), "feed": item.get("feedlabel"),
-                    "excerpt": excerpt, "image": image,
-                })
-            news_hit = (now + 3600, news)
-            _news_cache[appid] = news_hit
+        news_hit = _news_held(appid, now)
     return players_hit[1], news_hit[1]
+
+
+def _news_held(appid, now):
+    """Official game news with `_live_lock` already held."""
+    if len(_news_cache) >= 4000:
+        _news_cache.clear()
+    hit = _news_cache.get(appid)
+    if hit and hit[0] > now:
+        return hit
+    raw = get_json_url(
+        f"{API}/ISteamNews/GetNewsForApp/v2/?appid={appid}&count=5&maxlength=500",
+        f"news for {appid}", timeout=8,
+    ) or {}
+    news = []
+    for item in (raw.get("appnews") or {}).get("newsitems", []):
+        excerpt, image = _news_excerpt(item.get("contents"))
+        news.append({
+            "id": item.get("gid"), "title": item.get("title"),
+            "url": item.get("url"), "author": item.get("author"),
+            "date": item.get("date"), "feed": item.get("feedlabel"),
+            "feed_name": item.get("feedname"),
+            "excerpt": excerpt, "image": image,
+        })
+    hit = (time.time() + 3600, news)
+    _news_cache[appid] = hit
+    return hit
+
+
+def fetch_public_news(appid):
+    """Official news without also asking for the live player count."""
+    with _live_lock:
+        return _news_held(int(appid), time.time())[1]
 
 
 def fetch_achievements(appid):
