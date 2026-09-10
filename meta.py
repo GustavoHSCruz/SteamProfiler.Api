@@ -1003,13 +1003,12 @@ def _do_reviews(appid, timeout=TIMEOUT):
         "negative": summary.get("total_negative"),
         "total": summary.get("total_reviews"),
     }
-    # Steam's documented `day_range` filter gives the panel a useful trend
-    # instead of repeating the lifetime score already printed by the store.
-    # It is deliberately best-effort: a failure here must not discard the
-    # lifetime summary that was fetched successfully above.
+    # The query summary is lifetime-only even when Steam receives day_range or
+    # filter=recent. Read a bounded sample of the actual newest reviews instead
+    # so the panel never labels a lifetime total as a thirty-day result.
     recent_query = urllib.parse.urlencode({
-        "json": 1, "filter": "all", "day_range": 30, "language": "all",
-        "purchase_type": "all", "num_per_page": 0,
+        "json": 1, "filter": "recent", "language": "all",
+        "purchase_type": "all", "num_per_page": 100,
     })
     recent = None
     try:
@@ -1018,19 +1017,27 @@ def _do_reviews(appid, timeout=TIMEOUT):
         if _pace(max_wait=PAGE_WAIT):
             recent_body = _get_url(
                 f"{REVIEWS}/{int(appid)}?{recent_query}", timeout=timeout)
-            recent = (recent_body or {}).get("query_summary")
+            entries = (recent_body or {}).get("reviews")
+            if isinstance(entries, list) and entries:
+                recent = {
+                    "sample": "latest",
+                    "positive": sum(item.get("voted_up") is True for item in entries),
+                    "negative": sum(item.get("voted_up") is False for item in entries),
+                    "total": len(entries),
+                    "oldest_at": min((item.get("timestamp_created") for item in entries
+                                      if isinstance(item.get("timestamp_created"), int)),
+                                     default=None),
+                }
     except urllib.error.HTTPError:
         # Preserve the lifetime result, but honour Steam's cooldown globally.
         _note_429()
     if isinstance(recent, dict):
-        review["recent"] = {
-            "days": 30,
-            "score": recent.get("review_score"),
-            "description": recent.get("review_score_desc"),
-            "positive": recent.get("total_positive"),
-            "negative": recent.get("total_negative"),
-            "total": recent.get("total_reviews"),
-        }
+        review["recent"] = recent
+    else:
+        # A transient miss must not erase a good sample already on disk.
+        previous = ((lookup([appid]).get(int(appid)) or {}).get("reviews") or {}).get("recent")
+        if isinstance(previous, dict) and previous.get("sample") == "latest":
+            review["recent"] = previous
     _save(appid, reviews=json.dumps(review, separators=(",", ":")), reviews_at=_stamp())
     return True
 
@@ -1048,18 +1055,27 @@ def public_catalog(appid, cc=None, language="english"):
     def due(row, field, ttl):
         return not row or (age := _age(row.get(field))) is None or age > ttl
 
+    def reviews_due(row):
+        if due(row, "reviews_at", REVIEWS_TTL):
+            return True
+        reviews = row.get("reviews") or {}
+        recent = reviews.get("recent") or {}
+        # One-time migration from lifetime-only rows and the short-lived
+        # day_range experiment, whose summary Steam answered with lifetime data.
+        return bool(reviews) and recent.get("sample") != "latest"
+
     def read():
         row = lookup([appid], cc).get(appid) or {}
         row.update(_catalogue_row(appid, language))
         return row
 
     row = read()
-    if not due(row, "catalog_at", CATALOG_TTL) and not due(row, "reviews_at", REVIEWS_TTL):
+    if not due(row, "catalog_at", CATALOG_TTL) and not reviews_due(row):
         return row
     with _lock_for(appid, f"catalog:{language}"):
         row = read()
         need_catalog = due(row, "catalog_at", CATALOG_TTL)
-        need_reviews = due(row, "reviews_at", REVIEWS_TTL)
+        need_reviews = reviews_due(row)
         if OFFLINE or time.monotonic() < _cool_until or not (need_catalog or need_reviews):
             return row or {}
         if not _on_demand.acquire(blocking=False):

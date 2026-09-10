@@ -83,20 +83,25 @@ class AppsTest(unittest.TestCase):
         self.known(400, name="Portal", reviews={"total": 0, "positive": 0})
         self.assertIsNone(api.do_apps([400], "us", live=())["apps"]["400"]["reviews"])
 
-    def test_review_refresh_keeps_a_separate_thirty_day_summary(self):
+    def test_review_refresh_keeps_a_separate_latest_review_sample(self):
         old_get = meta._get_url
         old_pace = meta._pace
         calls = []
         try:
             def fake_get(url, timeout=None):
                 calls.append(url)
-                recent = "day_range=30" in url
+                recent = "filter=recent" in url
+                if recent:
+                    return {"reviews": [
+                        {"voted_up": index < 90, "timestamp_created": 1700000000 + index}
+                        for index in range(100)
+                    ]}
                 return {"query_summary": {
-                    "review_score": 8 if recent else 9,
+                    "review_score": 9,
                     "review_score_desc": "Very Positive",
-                    "total_positive": 90 if recent else 980,
-                    "total_negative": 10 if recent else 20,
-                    "total_reviews": 100 if recent else 1000,
+                    "total_positive": 980,
+                    "total_negative": 20,
+                    "total_reviews": 1000,
                 }}
             meta._get_url = fake_get
             meta._pace = lambda **kwargs: True
@@ -107,8 +112,27 @@ class AppsTest(unittest.TestCase):
         reviews = meta.lookup([620])[620]["reviews"]
         self.assertEqual(len(calls), 2)
         self.assertEqual(reviews["total"], 1000)
-        self.assertEqual(reviews["recent"]["days"], 30)
+        self.assertEqual(reviews["recent"]["sample"], "latest")
         self.assertEqual(reviews["recent"]["positive"], 90)
+
+    def test_companion_refreshes_the_old_lifetime_only_review_shape(self):
+        self.known(621, name="Portal 2", reviews={
+            "total": 1000, "positive": 980, "negative": 20,
+        })
+        old_detail = meta._do_detail
+        old_reviews = meta._do_reviews
+        old_pace = meta._pace
+        refreshed = []
+        try:
+            meta._do_detail = lambda *args, **kwargs: True
+            meta._do_reviews = lambda appid, **kwargs: refreshed.append(appid) or True
+            meta._pace = lambda **kwargs: True
+            meta.public_catalog(621, "us", "en")
+        finally:
+            meta._do_detail = old_detail
+            meta._do_reviews = old_reviews
+            meta._pace = old_pace
+        self.assertEqual(refreshed, [621])
 
     def test_trailer_is_the_one_the_store_leads_with(self):
         self.known(620, name="Portal 2", movies=[
@@ -201,8 +225,9 @@ class AppsTest(unittest.TestCase):
                             "mp4": {"max": "https://cdn/movie.mp4"}}],
                    reviews={"total": 1000, "positive": 980, "negative": 20,
                             "score": 9, "description": "Overwhelmingly Positive",
-                            "recent": {"days": 30, "total": 100, "positive": 91,
-                                       "negative": 9, "description": "Very Positive"}})
+                            "recent": {"sample": "latest", "total": 100,
+                                       "positive": 91, "negative": 9,
+                                       "oldest_at": 1700000000}})
         old_catalog = meta.public_catalog
         old_players = api.fetch.fetch_current_players
         old_news = api.fetch.fetch_public_news

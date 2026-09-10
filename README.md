@@ -130,10 +130,10 @@ endpoint never exposes a Steam Web API key and sends no credentials to Steam.
 `GET /api/companion?appid=<n>&l=<language>` is the other versioned public
 contract. It powers the Steam store panel from
 [SteamProfiler Companion](https://github.com/GustavoHSCruz/SteamProfiler.Companion)
-with catalogue identity, lifetime and 30-day review summaries, current players,
-recent official activity and the same trailer envelope. It deliberately sends
-only the latest news title instead of the news feed. Both public contracts
-permit cross-origin reads and carry `version: 1`.
+with catalogue identity, lifetime reviews and a bounded sample of the latest
+reviews, current players, recent official activity and the same trailer
+envelope. It deliberately sends only the latest news title instead of the news
+feed. Both public contracts permit cross-origin reads and carry `version: 1`.
 
 `GET /api/companion/profile?appid=<n>&id=<steamid64>` is the Companion's
 opt-in personal supplement. It returns only hours, last-played date and compact

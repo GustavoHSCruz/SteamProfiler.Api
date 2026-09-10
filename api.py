@@ -672,11 +672,11 @@ def do_companion(appid, language="en"):
             "positive_pct": round((reviews.get("positive") or 0) * 100 / total, 1),
             "description": reviews.get("description"),
             "recent": ({
-                "days": recent.get("days") or 30,
+                "sample": recent.get("sample"),
                 "total": recent_total,
                 "positive": recent.get("positive"),
                 "positive_pct": round((recent.get("positive") or 0) * 100 / recent_total, 1),
-                "description": recent.get("description"),
+                "oldest_at": recent.get("oldest_at"),
             } if recent_total else None),
         } if total else None),
         "players": players,
