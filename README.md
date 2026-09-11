@@ -108,6 +108,14 @@ wherever it was pasted. `sign.py` sits beside it for the same reason - the
 artwork can be signed in a hand, and there is no way to ship a script face to a
 file that must carry its own letters, so the letters are strokes.
 
+The words those pictures carry are the one thing this service says in prose
+rather than in keys, because an image cannot leave its text to the browser.
+They are not written here either: `i18n_words.py` is built from
+[SteamProfiler.i18n](https://github.com/GustavoHSCruz/SteamProfiler.i18n),
+alongside the site's dictionary, and committed as it comes. Everything else
+this service answers with travels as a key (`@err.rate|n=6`) that the front
+resolves, so the server never has to know which language anybody reads.
+
 The artwork has one case this service never sees. A visitor can put a picture of
 their own behind their figures, and `embed.py` draws the artwork with an empty
 slot where it goes: the browser decodes the file, composites it and saves the

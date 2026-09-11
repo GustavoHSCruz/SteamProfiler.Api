@@ -141,52 +141,13 @@ def plain(s):
 # ── Words ────────────────────────────────────────────────────────────
 # An image carries its own text, so unlike every other route on this service
 # these strings cannot be left to the browser. Only the handful a chart needs.
-WORDS = {
-    "en": {
-        "hours": "hours", "h": "h", "games": "games", "played": "played",
-        "owned": "owned", "never": "never opened", "level": "level",
-        "top": "most played", "library": "library", "genres": "genres",
-        "years": "last opened in", "platform": "platform", "recent": "last two weeks",
-        "windows": "Windows", "linux": "Linux", "mac": "macOS", "deck": "Steam Deck",
-        "since": "on Steam since", "per_day": "hours a day", "snapshot": "snapshot of",
-        "achievements": "achievements", "badges": "badges", "now": "playing now",
-        "nothing": "nothing yet", "of_it": "of the clock",
-        "common": "both of them play", "only_a": "only the first",
-        "only_b": "only the second", "ahead": "ahead", "tied": "level",
-        "signed": "signed",
-        "no_label": "custom text is not allowed on a Steam profile",
-    },
-    "pt": {
-        "hours": "horas", "h": "h", "games": "jogos", "played": "jogados",
-        "owned": "na conta", "never": "nunca abertos", "level": "nivel",
-        "top": "mais jogado", "library": "biblioteca", "genres": "generos",
-        "years": "abertos por ultimo em", "platform": "plataforma",
-        "recent": "duas ultimas semanas",
-        "windows": "Windows", "linux": "Linux", "mac": "macOS", "deck": "Steam Deck",
-        "since": "na Steam desde", "per_day": "horas por dia", "snapshot": "retrato de",
-        "achievements": "conquistas", "badges": "insignias", "now": "jogando agora",
-        "nothing": "nada ainda", "of_it": "do relogio",
-        "common": "os dois jogam", "only_a": "so do primeiro",
-        "only_b": "so do segundo", "ahead": "na frente", "tied": "empate",
-        "signed": "assinado",
-        "no_label": "texto proprio nao e permitido no perfil da Steam",
-    },
-    "ru": {
-        "hours": "часов", "h": "ч", "games": "игр", "played": "запущено",
-        "owned": "в аккаунте", "never": "не открыто", "level": "уровень",
-        "top": "больше всего", "library": "библиотека", "genres": "жанры",
-        "years": "последний запуск", "platform": "платформа",
-        "recent": "две недели",
-        "windows": "Windows", "linux": "Linux", "mac": "macOS", "deck": "Steam Deck",
-        "since": "в Steam с", "per_day": "часов в день", "snapshot": "снимок",
-        "achievements": "достижений", "badges": "значков", "now": "играет",
-        "nothing": "пока ничего", "of_it": "от всего",
-        "common": "играют оба", "only_a": "только у первого",
-        "only_b": "только у второго", "ahead": "впереди", "tied": "поровну",
-        "signed": "подпись",
-        "no_label": "свой текст в профиле Steam не допускается",
-    },
-}
+#
+# They live in the SteamProfiler.i18n repository now, along with every string
+# the site shows: i18n_words.py is written by its build.py and is not edited
+# here. Everything else this service answers with is a key the front resolves
+# (`@err.rate|n=6`), which is why this is the one table the server has to hold
+# in prose.
+from i18n_words import WORDS  # noqa: E402  - generated, see SteamProfiler.i18n
 
 
 def words(lang):
