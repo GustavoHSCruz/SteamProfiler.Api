@@ -32,10 +32,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$WORK/site"
+mkdir -p "$WORK/site" "$WORK/next/about"
 for lang in en pt ru zh-cn zh-tw; do
   printf 'const DICT_LANG = %s;\n' "'$lang'" > "$WORK/site/dict.$lang.js"
+  # The rebuilt front ships one file per page per language and the cookie
+  # picks which one. Same map, second set of files, so it is asked the same
+  # six ways below.
+  printf '<!doctype html><html lang=%s><title>PAGE_LANG %s</title>\n' "$lang" "$lang" \
+    > "$WORK/next/about/index.$lang.html"
 done
+# What a missing next/ must fall back to, and the reason the fallback exists:
+# a deploy that puts the api up first, or a build that wrote nothing, has to
+# leave yesterday's page standing rather than take the site down.
+printf '<!doctype html><title>PAGE_LANG old-site</title>\n' > "$WORK/site/status.html"
 # The gate says "not banned" to everything. auth_request treats 204 as a pass.
 printf 'server { listen 8000; location / { return 204; } }\n' > "$WORK/gate.conf"
 
@@ -46,6 +55,7 @@ docker run -d --name "$GATE" --network "$NET" --network-alias api \
 docker run -d --name "$WEB" --network "$NET" \
   -v "$ROOT/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   -v "$WORK/site:/usr/share/nginx/html:ro" \
+  -v "$WORK/next:/usr/share/nginx/next:ro" \
   -p 127.0.0.1:0:80 nginx:alpine >/dev/null \
   || { echo "FAIL  dict routing: nginx did not start"; exit 1; }
 
@@ -89,5 +99,32 @@ ask zh-tw "the Hant script chooses Traditional Chinese" -H 'Accept-Language: zh-
 ask en "no cookie and no header is English"
 ask en "an unknown language is English" -H 'Cookie: sp-lang=xx' -H 'Accept-Language: xx'
 
+page() { # <expected> <label> [curl args...]
+  local want="$1" label="$2"; shift 2
+  local got
+  got="$(curl -fsS "$@" "http://127.0.0.1:$PORT/about" 2>/dev/null \
+         | sed -n 's/.*<title>PAGE_LANG \([a-z-]*\).*/\1/p')"
+  if [ "$got" != "$want" ]; then
+    echo "FAIL  $label: wanted $want, got ${got:-nothing}"
+    fails=$((fails + 1))
+  fi
+}
+
+# The prerendered pages answer the same way, because it is the same map.
+page ru "a page obeys the cookie" -H 'Cookie: sp-lang=ru' -H 'Accept-Language: pt-BR'
+page zh-tw "a page in Traditional Chinese" -H 'Cookie: sp-lang=zh-tw'
+page pt "a page follows Accept-Language" -H 'Accept-Language: pt-BR,pt;q=0.9'
+page en "a page with nothing to go on is English"
+
+# And the address that has no file in next/ falls through to the old tree
+# rather than 404ing, which is what keeps a half-deployed front from being an
+# outage.
+got="$(curl -fsS "http://127.0.0.1:$PORT/status" 2>/dev/null \
+       | sed -n 's/.*<title>PAGE_LANG \([a-z-]*\).*/\1/p')"
+if [ "$got" != "old-site" ]; then
+  echo "FAIL  a page missing from next/ falls back to site/: got ${got:-nothing}"
+  fails=$((fails + 1))
+fi
+
 [ "$fails" -ne 0 ] && exit 1
-echo "dict routing ok: cookie beats Accept-Language, and both beat nothing"
+echo "dict routing ok: cookie beats Accept-Language, both beat nothing, and a missing page falls back"

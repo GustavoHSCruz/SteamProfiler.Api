@@ -105,6 +105,23 @@ if [ -x "$TMP/api/check.sh" ]; then
     || { sed 's/^/          /' "$TMP/api.log"; morre "api: checks falharam"; }
   log "api: checks ok"
 fi
+# ── O front novo, compilado antes da suíte ───────────────────────────
+# next/ tem etapa de build, o que o site/ nunca teve, e a ordem importa: a
+# suíte do front roda o typecheck e confere que a pré-renderização escreveu um
+# arquivo por página e por idioma, e ela não tem o que conferir se as
+# dependências não estiverem instaladas. `npm ci` e não `npm install` porque o
+# que sobe tem que ser o package-lock.json do commit.
+#
+# Isso põe o registry do npm no caminho de todo deploy, que é o preço da
+# escolha de framework e está escrito no README do front. Se o build falhar, o
+# deploy morre aqui e o servidor continua servindo o que já estava lá.
+if [ -f "$TMP/front/next/package.json" ]; then
+  log "front: instalando e compilando next/"
+  ( cd "$TMP/front/next" && npm ci --silent && npm run --silent build ) > "$TMP/next.log" 2>&1 \
+    || { sed 's/^/          /' "$TMP/next.log"; morre "front: o build do next/ falhou"; }
+  log "front: next/ compilado"
+fi
+
 if [ -x "$TMP/front/tools/check.sh" ]; then
   ( cd "$TMP/front" && bash tools/check.sh "$TMP/front" ) > "$TMP/front.log" 2>&1 \
     || { sed 's/^/          /' "$TMP/front.log"; morre "front: checks falharam"; }
@@ -143,6 +160,16 @@ API_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
 FRONT_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' --exclude '.git' \
   "$TMP/front/site/" "$REMOTO:$DESTINO/site/")" || morre "front: rsync falhou"
 
+# O front novo, só o que o build escreveu. dist/server/ fica de fora: é o
+# bundle que a pré-renderização usou na máquina que compilou e não tem nada
+# que fazer no servidor.
+NEXT_SAIU=""
+if [ -d "$TMP/front/next/dist" ]; then
+  NEXT_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
+    --exclude 'server/' \
+    "$TMP/front/next/dist/" "$REMOTO:$DESTINO/next/")" || morre "next: rsync falhou"
+fi
+
 lista() {
   local nome="$1" saiu="$2"
   local arquivos
@@ -151,6 +178,7 @@ lista() {
 }
 lista api "$API_SAIU"
 lista front "$FRONT_SAIU"
+[ -n "$NEXT_SAIU" ] && lista next "$NEXT_SAIU"
 
 # ── Só o restart que o tipo de arquivo exige ─────────────────────────
 # Estático vale na hora porque o site/ e o ./ são bind mounts. O resto não:
