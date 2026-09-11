@@ -181,10 +181,24 @@ lista front "$FRONT_SAIU"
 [ -n "$NEXT_SAIU" ] && lista next "$NEXT_SAIU"
 
 # ── Só o restart que o tipo de arquivo exige ─────────────────────────
-# Estático vale na hora porque o site/ e o ./ são bind mounts. O resto não:
-# o nginx.conf é mount de arquivo único e o rsync troca o inode, então o
-# container continua servindo a config velha e o `nginx -t` valida a velha
-# sem reclamar. Só o restart pega a nova.
+# Estático vale na hora porque o site/, o next/ e o ./ são bind mounts de
+# pasta. O nginx.conf não: é mount de arquivo único, e `rsync` escreve um
+# inode novo, então o container segue servindo a config velha e o `nginx -t`
+# valida a velha sem reclamar de nada.
+#
+# E aqui moravam três bugs que custaram uma tarde em 11/09/2026:
+#
+#   1. os nomes estavam errados. `steamprofiler-site` não existe - o compose
+#      cria `steamprofiler-web-1`. O docker respondia "No such container",
+#      o 2>/dev/null engolia, e o deploy dizia que tinha reiniciado.
+#   2. `docker restart` não re-liga o inode. Mesmo com o nome certo, o mount
+#      de arquivo continua apontando para o arquivo antigo: só recriar o
+#      container pega a config nova.
+#   3. o healthz era pedido em 127.0.0.1:16200, e a porta é publicada em
+#      192.168.0.20. A espera falhava sempre e ninguém via.
+#
+# Agora é `docker compose up -d --force-recreate` pelo serviço, rodando na
+# pasta do projeto no servidor, e o erro aparece.
 NEEDS_API=0; NEEDS_WEB=0; NEEDS_ADMIN=0
 while IFS= read -r f; do
   case "$f" in
@@ -200,9 +214,16 @@ if [ "$ENSAIO" -eq 1 ]; then
   exit 0
 fi
 
-[ "$NEEDS_API" -eq 1 ]   && { log "python mudou, reiniciando a api";     ssh "$REMOTO" 'docker restart steamprofiler-api'   >/dev/null 2>&1; }
-[ "$NEEDS_WEB" -eq 1 ]   && { log "nginx.conf mudou, reiniciando o web"; ssh "$REMOTO" 'docker restart steamprofiler-site'  >/dev/null 2>&1; }
-[ "$NEEDS_ADMIN" -eq 1 ] && { log "admin mudou, reiniciando o painel";   ssh "$REMOTO" 'docker restart steamprofiler-admin' >/dev/null 2>&1; }
+recria() { # <serviço> <motivo>
+  log "$2, recriando $1"
+  ssh "$REMOTO" "cd $DESTINO && docker compose up -d --force-recreate $1" 2>&1 \
+    | sed 's/^/          /' \
+    || morre "$1: não subiu"
+}
+
+[ "$NEEDS_API" -eq 1 ]   && recria api   "python mudou"
+[ "$NEEDS_WEB" -eq 1 ]   && recria web   "nginx.conf mudou"
+[ "$NEEDS_ADMIN" -eq 1 ] && recria admin "admin mudou"
 
 if [ "$NEEDS_API" -eq 1 ] || [ "$NEEDS_WEB" -eq 1 ]; then
   # Espera de verdade. A versão anterior perguntava uma vez logo depois do
@@ -211,7 +232,10 @@ if [ "$NEEDS_API" -eq 1 ] || [ "$NEEDS_WEB" -eq 1 ]; then
   # pior que não avisar: um alerta que sempre grita deixa de ser lido.
   for _ in $(seq 1 30); do
     sleep 3
-    if ssh "$REMOTO" 'curl -fsS --max-time 5 http://127.0.0.1:16200/healthz' >/dev/null 2>&1; then
+    # De dentro do container, e não pelo endereço publicado: o bind da porta é
+    # configuração do servidor (HTTP_BIND) e já foi 127.0.0.1 e já foi
+    # 192.168.0.20. Perguntar por dentro não depende de acertar qual é hoje.
+    if ssh "$REMOTO" "cd $DESTINO && docker compose exec -T web wget -qO- --timeout=5 http://127.0.0.1/healthz" >/dev/null 2>&1; then
       log "no ar"
       exit 0
     fi
