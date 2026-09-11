@@ -178,17 +178,12 @@
             <!-- One tab per language, and each holds a whole post. A language
                  left empty is a translation that does not exist yet, not an
                  error: the site falls back to the original and says so. -->
-            <nav class="tabs tabs--sub" id="lang-tabs">
-              <button class="tab" type="button" data-lang="en" data-on="1">
-                EN <b class="lang-mark" id="mark-en"></b>
-              </button>
-              <button class="tab" type="button" data-lang="pt">
-                PT <b class="lang-mark" id="mark-pt"></b>
-              </button>
-              <button class="tab" type="button" data-lang="ru">
-                RU <b class="lang-mark" id="mark-ru"></b>
-              </button>
-            </nav>
+            <!-- Filled by admin.js from BLOG_LANGS, the same list the panes
+                 below are built from. They used to be written here by hand,
+                 three of them, and when the list grew to five the script
+                 looked for mark-zh-cn, found nothing, threw, and took the
+                 whole panel down with it - login included. -->
+            <nav class="tabs tabs--sub" id="lang-tabs"></nav>
 
             <div id="lang-panes"></div>
 

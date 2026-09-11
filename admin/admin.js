@@ -597,10 +597,18 @@ async function loadBlog() {
   el('badge-blog').textContent = drafts ? String(drafts) : '';
 }
 
+/* One tab per language in BLOG_LANGS, built here rather than written in the
+   HTML, so the tabs, the marks and the panes can never disagree about how many
+   languages a post has. They did, for one deploy, and the mismatch threw at
+   boot and took the login form down with everything else. */
+el('lang-tabs').append(...BLOG_LANGS.map((lang, i) => {
+  const tab = h('button', { cls: 'tab', attr: { type: 'button' }, data: { lang } },
+    txt(`${lang.toUpperCase()} `), h('b', { cls: 'lang-mark', attr: { id: `mark-${lang}` } }));
+  if (i === 0) tab.dataset.on = '1';
+  tab.addEventListener('click', () => showLang(lang));
+  return tab;
+}));
 el('lang-panes').append(...BLOG_LANGS.map(pane));
-for (const b of document.querySelectorAll('#lang-tabs .tab')) {
-  b.addEventListener('click', () => showLang(b.dataset.lang));
-}
 el('b-slugs').addEventListener('click', writeSlugs);
 el('b-new').addEventListener('click', () => fillEditor(null));
 fillEditor(null);
