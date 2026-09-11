@@ -75,7 +75,10 @@ OLLAMA_SLUG_MODEL = os.environ.get("OLLAMA_SLUG_MODEL", OLLAMA_MODEL)
 # the model allows 900s for the same reason.
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "900"))
 
-LANG_NAMES = {"en": "English", "pt": "Portuguese", "ru": "Russian"}
+LANG_NAMES = {
+    "en": "English", "pt": "Portuguese", "ru": "Russian",
+    "zh-cn": "Simplified Chinese", "zh-tw": "Traditional Chinese",
+}
 
 # Kept in one place because the three fields are translated by three separate
 # calls: a title, a lede and a body have nothing to do with each other, and one
@@ -438,7 +441,13 @@ class Handler(BaseHTTPRequestHandler):
             if name == "sp-lang" and value in have:
                 return value
         for tag in (self.headers.get("Accept-Language") or "").split(","):
-            code = tag.strip().split(";")[0].lower()[:2]
+            clean = tag.strip().split(";")[0].lower().replace("_", "-")
+            if clean.startswith("zh-hant") or re.match(r"^zh-(tw|hk|mo)(?:-|$)", clean):
+                code = "zh-tw"
+            elif clean == "zh" or clean.startswith("zh-"):
+                code = "zh-cn"
+            else:
+                code = clean[:2]
             if code in have:
                 return code
         return "en"

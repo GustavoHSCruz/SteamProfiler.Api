@@ -33,7 +33,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$WORK/site"
-for lang in en pt ru; do
+for lang in en pt ru zh-cn zh-tw; do
   printf 'const DICT_LANG = %s;\n' "'$lang'" > "$WORK/site/dict.$lang.js"
 done
 # The gate says "not banned" to everything. auth_request treats 204 as a pass.
@@ -66,7 +66,7 @@ ask() { # <expected> <label> [curl args...]
   local want="$1" label="$2"; shift 2
   local got
   got="$(curl -fsS "$@" "http://127.0.0.1:$PORT/dict.js" 2>/dev/null \
-         | sed -n "s/.*DICT_LANG = '\([a-z]*\)'.*/\1/p")"
+         | sed -n "s/.*DICT_LANG = '\([a-z-]*\)'.*/\1/p")"
   if [ "$got" != "$want" ]; then
     echo "FAIL  $label: wanted $want, got ${got:-nothing}"
     fails=$((fails + 1))
@@ -76,10 +76,15 @@ ask() { # <expected> <label> [curl args...]
 # The cookie decides, even against a browser asking for something else.
 ask ru "a cookie is obeyed" -H 'Cookie: sp-lang=ru' -H 'Accept-Language: pt-BR,pt;q=0.9'
 ask pt "a cookie among others is obeyed" -H 'Cookie: theme=dark; sp-lang=pt; seen=1'
+ask zh-cn "a Simplified Chinese cookie is obeyed" -H 'Cookie: sp-lang=zh-cn' -H 'Accept-Language: zh-TW'
+ask zh-tw "a Traditional Chinese cookie is obeyed" -H 'Cookie: sp-lang=zh-tw' -H 'Accept-Language: zh-CN'
 # No cookie: the browser's own preference, which is the guess that keeps a
 # first visit from costing a reload.
 ask pt "Accept-Language decides a first visit" -H 'Accept-Language: pt-BR,pt;q=0.9,en;q=0.8'
 ask ru "Accept-Language in Russian" -H 'Accept-Language: ru-RU,ru;q=0.9'
+ask zh-cn "Accept-Language in Simplified Chinese" -H 'Accept-Language: zh-CN,zh;q=0.9'
+ask zh-tw "Accept-Language in Traditional Chinese" -H 'Accept-Language: zh-TW,zh;q=0.9'
+ask zh-tw "the Hant script chooses Traditional Chinese" -H 'Accept-Language: zh-Hant'
 # Nothing to go on, and nonsense, both land in English.
 ask en "no cookie and no header is English"
 ask en "an unknown language is English" -H 'Cookie: sp-lang=xx' -H 'Accept-Language: xx'

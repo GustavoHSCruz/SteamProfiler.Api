@@ -1017,13 +1017,13 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def lang(raw):
-        """Which of the three languages the reader asked for.
+        """Which language the reader asked for.
 
         Checked against a closed set rather than trusted, because it reaches a
         database lookup - and it is the one parameter on this service that
         exists at all, since everything else the API says travels as a key the
         browser resolves. Prose cannot: somebody has to have written it."""
-        code = (raw or "")[:2].lower()
+        code = (raw or "").strip().lower().replace("_", "-")
         return code if code in blog.LANGS else "en"
 
     def send_jpeg(self, body, ttl):
@@ -1147,7 +1147,10 @@ class Handler(BaseHTTPRequestHandler):
     # Which locale tag each language claims in a preview card. Written out
     # rather than derived: og:locale wants a territory, and "pt" alone is not
     # one.
-    OG_LOCALE = {"en": "en_US", "pt": "pt_BR", "ru": "ru_RU"}
+    OG_LOCALE = {
+        "en": "en_US", "pt": "pt_BR", "ru": "ru_RU",
+        "zh-cn": "zh_CN", "zh-tw": "zh_TW",
+    }
 
     # A hostname and nothing else. What arrives here was written by nginx, but
     # the route it arrives on is public, so a visitor can hand this service any

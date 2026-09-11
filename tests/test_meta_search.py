@@ -105,6 +105,12 @@ class SearchCatalogueTest(unittest.TestCase):
                 [{"appid": 10, "name": "Loop"}], more=True, cursor=0,
             ))
 
+    def test_chinese_variants_use_the_matching_storefront(self):
+        self.assertEqual(meta.cc_of("cn"), "cn")
+        self.assertEqual(meta.cc_of("tw"), "tw")
+        self.assertEqual(meta.language_of("zh-CN"), "schinese")
+        self.assertEqual(meta.language_of("zh_TW"), "tchinese")
+
 
 if __name__ == "__main__":
     unittest.main()

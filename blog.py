@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The blog. One author, three languages, and a vote anyone can cast.
+"""The blog. One author, several languages, and a vote anyone can cast.
 
 Same database as the messages and the same stdlib-only rule, but its own module
 and its own tables: a post is written, revised and published, which is nothing
@@ -14,7 +14,7 @@ would be inventing a model before the thing it models exists. Writing happens
 through the separate admin panel, which is the only door that carries the
 ADMIN_TOKEN. What visitors get is the read side and the vote.
 
-**A post is not one text.** The site speaks three languages and a post is
+**A post is not one text.** The site speaks several languages and a post is
 prose, so it cannot travel as keys the way every other string does - somebody
 has to write it. `post_text` therefore holds one row per language actually
 written, and `posts.origin` says which one is the original. A reader whose
@@ -52,7 +52,7 @@ import store
 # board is, and keeps one database file to back up rather than two.
 DB_PATH = store.DB_PATH
 
-LANGS = ("en", "pt", "ru")
+LANGS = ("en", "pt", "ru", "zh-cn", "zh-tw")
 STATES = ("draft", "published")
 
 MAX_TITLE = 140
@@ -696,7 +696,7 @@ def remove(post_id):
 
 
 def everything():
-    """Every post, drafts included, with all three texts. The panel's payload.
+    """Every post, drafts included, with all translated texts. The panel's payload.
 
     It carries the whole body of every language, which is the one place on this
     site where that is the right thing to send: the editor has to be able to

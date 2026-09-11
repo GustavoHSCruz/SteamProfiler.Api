@@ -58,7 +58,7 @@ COUNTRY = os.environ.get("STORE_COUNTRY", "br")
 # One storefront per language the site reads in. Steam's regional pricing is
 # not an exchange rate - Valve sets each region separately, and Arma 3 is
 # $29.99 in the US against R$99.99 in Brazil, which no conversion would ever
-# produce. So the three prices are three facts, fetched three times, and the
+# produce. So the regional prices are separate facts, fetched separately, and the
 # page shows the one belonging to the reader rather than a sum done here.
 #
 # Russia is the ragged one. Bethesda, EA, Ubisoft and Activision pulled out in
@@ -66,9 +66,13 @@ COUNTRY = os.environ.get("STORE_COUNTRY", "br")
 # this cache knows, against thirty-six for the other two. That is not an error
 # and it is not hidden: those land in the `absent` state, which names the
 # country it is talking about.
-COUNTRIES = ("us", "br", "ru")
-STORE_LANGUAGES = {"en": "english", "pt": "brazilian", "ru": "russian",
-                   "english": "english", "brazilian": "brazilian", "russian": "russian"}
+COUNTRIES = ("us", "br", "ru", "cn", "tw")
+STORE_LANGUAGES = {
+    "en": "english", "pt": "brazilian", "ru": "russian",
+    "zh-cn": "schinese", "zh-tw": "tchinese",
+    "english": "english", "brazilian": "brazilian", "russian": "russian",
+    "schinese": "schinese", "tchinese": "tchinese",
+}
 UA = "steamprofiler.org"
 
 
@@ -80,8 +84,9 @@ def cc_of(value):
 
 
 def language_of(value):
-    """One of the three storefront languages the browser can select."""
-    return STORE_LANGUAGES.get((value or "").strip().lower(), "english")
+    """One of the storefront languages the browser can select."""
+    key = (value or "").strip().lower().replace("_", "-")
+    return STORE_LANGUAGES.get(key, "english")
 
 # The storefront honours a list only for price_overview, and only up to a point.
 BATCH = 100

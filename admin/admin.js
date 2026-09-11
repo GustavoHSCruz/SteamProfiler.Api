@@ -279,12 +279,12 @@ for (const b of document.querySelectorAll('#tabs .tab')) {
    behind the same three locks the rest of this page is, and that is the
    answer until accounts exist.
 
-   A post is three texts, not one. The site speaks three languages and prose
+   A post is several texts, not one. The site speaks several languages and prose
    cannot travel as keys the way every other string does, so each language is
    its own pane and any of them may simply be missing - the public page falls
    back to the original and says which language it is showing. */
 
-const BLOG_LANGS = ['en', 'pt', 'ru'];
+const BLOG_LANGS = ['en', 'pt', 'ru', 'zh-cn', 'zh-tw'];
 let editing = null;         // the post id being edited, or null for a new one
 // One per language, plus the fixed address. Once a field is typed into it is
 // never suggested over: what is in it is a decision somebody made.
@@ -428,9 +428,9 @@ function pane(lang) {
 
    Only the languages that need it are asked for. An English or Portuguese
    title becomes an address by dropping characters, which this page can do
-   itself, instantly and the same way every time; a Russian one becomes an
+   itself, instantly and the same way every time; Russian and Chinese become an
    address by being transliterated, which is a judgement, and the model on the
-   desk is the one making it. Sending all three would be paying a round trip to
+   desk is the one making it. Sending every title would be paying a round trip to
    be told what slugify() already said.
 
    What comes back lands in the fields, not in the post. Reading it before
@@ -490,7 +490,7 @@ function showLang(lang) {
 }
 
 /* A dot beside each language tab, so "which of the three is written" is
-   readable without opening all three. */
+   readable without opening every translation. */
 function markLangs() {
   for (const lang of BLOG_LANGS) {
     const written = el(`b-title-${lang}`).value.trim() && el(`b-body-${lang}`).value.trim();
