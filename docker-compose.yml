@@ -32,7 +32,12 @@ services:
     user: "0:0"
     command: ["chown", "-R", "10001:10001", "/app/data"]
     volumes:
-      - app-data:/app/data
+      # Onde os bancos moram. O volume nomeado continua sendo o default, que é
+      # o que um clone limpo quer; um servidor que já tinha os bancos numa pasta
+      # aponta DATA_HOST_DIR para ela. Sem isso, recriar o container sobe a api em
+      # cima de um volume vazio e ela responde como se não soubesse nada - o que
+      # aconteceu em produção em 11/09/2026, com os contadores caindo para 1.
+      - ${DATA_HOST_DIR:-app-data}:/app/data
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -47,7 +52,12 @@ services:
       DATA_DIR: /app/data
       PORT: "8000"
     volumes:
-      - app-data:/app/data
+      # Onde os bancos moram. O volume nomeado continua sendo o default, que é
+      # o que um clone limpo quer; um servidor que já tinha os bancos numa pasta
+      # aponta DATA_HOST_DIR para ela. Sem isso, recriar o container sobe a api em
+      # cima de um volume vazio e ela responde como se não soubesse nada - o que
+      # aconteceu em produção em 11/09/2026, com os contadores caindo para 1.
+      - ${DATA_HOST_DIR:-app-data}:/app/data
     depends_on:
       init-data:
         condition: service_completed_successfully
@@ -75,7 +85,12 @@ services:
     ports:
       - "${ADMIN_BIND:-127.0.0.1}:${ADMIN_PORT:-16201}:8000"
     volumes:
-      - app-data:/app/data
+      # Onde os bancos moram. O volume nomeado continua sendo o default, que é
+      # o que um clone limpo quer; um servidor que já tinha os bancos numa pasta
+      # aponta DATA_HOST_DIR para ela. Sem isso, recriar o container sobe a api em
+      # cima de um volume vazio e ela responde como se não soubesse nada - o que
+      # aconteceu em produção em 11/09/2026, com os contadores caindo para 1.
+      - ${DATA_HOST_DIR:-app-data}:/app/data
       - ${FRONTEND_DIR:-../steamprofiler-front/site}:/app/site:ro
     env_file:
       - .env
