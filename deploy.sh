@@ -142,6 +142,7 @@ fi
 #   .env, .env.bak-*   a configuração e os backups dela, que nunca estiveram
 #                      no git e são o que faz a api subir
 #   data/              os bancos: recados, bans, meta, houses
+#   site/, next/       os dois fronts, que são de outro repo e têm viagem própria
 #   ollama-bridge/     o bridge.conf da ponte nginx que alcança o tradutor
 #                      local. Um arquivo, só no servidor, desde 30/07/2026 -
 #                      e apagá-lo derruba a tradução do blog em silêncio,
@@ -151,9 +152,15 @@ fi
 # Cada um desses foi visto num --dry-run antes de este arquivo existir na
 # forma atual: os três últimos apareceram como "deleting" na primeira versão
 # da lista, que só tinha os óbvios.
+# `next/` entrou nesta lista em 11/09/2026 e a ausência dela é o motivo pelo
+# qual produção serviu a home antiga depois de três deploys "com sucesso":
+# esta viagem tem --delete na raiz do projeto, o next/ não mora no repo da api,
+# então ela o apagava; a viagem de baixo o recriava com inode novo, e o
+# container do nginx seguia montado na pasta apagada, vazia. O nginx caía no
+# fallback e ninguém via erro nenhum.
 API_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
   --exclude '.env' --exclude '.env.bak-*' --exclude 'data/' \
-  --exclude '__pycache__/' --exclude '.git' --exclude 'site/' \
+  --exclude '__pycache__/' --exclude '.git' --exclude 'site/' --exclude 'next/' \
   --exclude 'ollama-bridge/' --exclude 'deploy.sh' --exclude 'watch.py' \
   "$TMP/api/" "$REMOTO:$DESTINO/")" || morre "api: rsync falhou"
 
@@ -207,6 +214,13 @@ while IFS= read -r f; do
     *.py)               NEEDS_API=1 ;;
   esac
 done <<< "$API_SAIU"
+
+# O next/ também pede o web recriado. Em 11/09/2026 um deploy trocou a pasta no
+# host e o container seguiu com o mount apontando para a anterior, vazia: o
+# nginx caiu no fallback e produção serviu a home antiga com tudo dizendo que
+# estava certo. Recriar custa cinco segundos; servir a versão errada custou
+# quatro pedidos do dono.
+[ -n "$NEXT_SAIU" ] && NEEDS_WEB=1
 
 if [ "$ENSAIO" -eq 1 ]; then
   log "ensaio: nada foi escrito no servidor e nada foi reiniciado"

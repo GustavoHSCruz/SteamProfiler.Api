@@ -11,7 +11,7 @@ services:
       # the old pages and nothing else changes.
       - ${FRONTEND_NEXT_DIR:-../steamprofiler-front/next/dist}:/usr/share/nginx/next:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - app-data:/srv:ro
+      - ${DATA_HOST_DIR:-app-data}:/srv:ro
     depends_on:
       api:
         condition: service_healthy
