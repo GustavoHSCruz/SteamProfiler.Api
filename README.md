@@ -98,7 +98,8 @@ browser -> nginx -> guard.py -> api.py -> Steam / OpenDota
 The main modules are `fetch.py` for Steam profiles, `meta.py` for store data,
 `cards.py` and `inv.py` for Community Market data, `fx.py` for exchange rates,
 `houses.py` for the publisher and developer index, `census.py` for aggregate
-traffic counts, and `og.py` and `embed.py` for the two kinds of picture this
+traffic counts (and `census.public()`, the narrow part of them that the public
+status page prints), and `og.py` and `embed.py` for the two kinds of picture this
 service draws - the link preview, and the charts, banners, badges, versus cards
 and Steam artwork meant to be pasted or uploaded somewhere else. Everything
 `embed.py` produces is self-contained: key art, avatars and profile backgrounds
@@ -151,6 +152,18 @@ with catalogue identity, lifetime reviews and a bounded sample of the latest
 reviews, current players, recent official activity and the same trailer
 envelope. It deliberately sends only the latest news title instead of the news
 feed. Both public contracts permit cross-origin reads and carry `version: 1`.
+
+`GET /api/status` is the public half of `/healthz`, and the two are kept apart
+on purpose. `/healthz` is an operator's page: the gate's counters, the ban
+table and what the census is holding, for the person who runs the instance.
+`/status` answers a visitor's three questions instead - is it up, is Steam
+answering, how much does it know - and carries no figure that describes one
+address, one profile or one country. The Steam allowance appears there as a
+word and a percentage rather than a call count, and the traffic is weekly
+totals out of `census.public()`, which is the only reader in that module whose
+output is allowed off this machine. The site draws it at
+[/status](https://steamprofiler.org/status); `tests/test_status.py` is a list
+of names that payload may never contain, at any depth.
 
 `GET /api/companion/profile?appid=<n>&id=<steamid64>` is the Companion's
 opt-in personal supplement. It returns only hours, last-played date and compact

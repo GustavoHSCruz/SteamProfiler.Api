@@ -50,9 +50,15 @@ Tuesday, and memory cannot answer it. The flush is a timer, not a write per
 request: the gate runs on every font and every image on the site, and a
 database write in that path would cost more than the answer is worth.
 
-None of this decides anything. No page changes because of what is in here, no
-lookup is refused because of it, and it never leaves this server. It exists so
-the owner can see whether anyone is out there.
+None of this decides anything. No page changes because of what is in here and
+no lookup is refused because of it. It exists so the owner can see whether
+anyone is out there.
+
+One narrow part of it does leave this server, and it is drawn tight on purpose:
+public() returns four totals and a list of past weeks, all of them counts with
+nobody inside them, and the status page prints those. Everything else here -
+the classes, the countries, the regions, every figure that belongs to one
+profile or one address - answers to the owner's panel and to nothing else.
 """
 
 import hashlib
@@ -560,6 +566,48 @@ def _totals(subs):
         out[s["steamid"]] = out.get(s["steamid"], 0) + s["hits"]
     return [{"steamid": k, "hits": v}
             for k, v in sorted(out.items(), key=lambda kv: -kv[1])]
+
+
+def public():
+    """The handful of numbers the public status page is allowed to print.
+
+    Everything else in this module answers to the owner and to nobody else.
+    What is here is the part that survives a rotation anyway - counts with
+    nobody in them - plus the running week, and the names say what they are:
+    `addresses`, not "visitors", because an address is what was counted, and a
+    carrier network behind one of them is a hundred people while one person on
+    wifi and on a phone is two.
+
+    Deliberately not here, and not by omission: the class breakdown, the
+    countries, the regions, and every per-profile figure. A weekly total cannot
+    be anybody. A country column on a site this size, some weeks, could be."""
+    current = epoch_of()
+    since = f"-{int(EPOCH // 86400)} days"
+    try:
+        with _connect() as con:
+            now = con.execute(
+                "SELECT COUNT(*) AS addresses, COALESCE(SUM(hits), 0) AS requests"
+                " FROM visitors WHERE epoch = ?", (current,)).fetchone()
+            looked = con.execute(
+                "SELECT COALESCE(SUM(hits), 0) AS n FROM subjects"
+                " WHERE day >= date('now', ?)", (since,)).fetchone()
+            weeks = con.execute(
+                "SELECT began_at, visitors, hits FROM epochs"
+                " ORDER BY epoch DESC LIMIT 12").fetchall()
+    except sqlite3.Error:
+        return None
+    return {
+        "window_days": EPOCH / 86400,
+        "began_at": current * EPOCH,
+        "addresses": now["addresses"],
+        "requests": now["requests"],
+        "lookups": looked["n"],
+        # Whole weeks that have already closed. The one in progress is the
+        # block above and is not in here, because half a week drawn beside
+        # twelve whole ones reads as a collapse in traffic.
+        "weeks": [{"began_at": r["began_at"], "addresses": r["visitors"],
+                   "requests": r["hits"]} for r in weeks],
+    }
 
 
 def state():

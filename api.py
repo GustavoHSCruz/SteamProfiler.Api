@@ -25,6 +25,9 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     POST /feedback                  -> leave a message
     POST /vote                      -> toggle a vote on a board item
     GET  /support                   -> the donation channels that are configured
+    GET  /status                    -> the public half of /healthz: what the
+                                       caches hold, whether Steam is answering,
+                                       and the week's traffic as totals
 
     GET  /bars.svg?q=<anything>     the embeds: a chart, a strip, a badge. Every
     GET  /banner.svg?q=<anything>   one of them self-contained, so it survives
@@ -98,6 +101,9 @@ import store
 import support
 
 PORT = int(os.environ.get("PORT", "8000"))
+# When this process came up. The status page prints how long the service has
+# been answering, and the only honest source for that is the process itself.
+STARTED = time.time()
 # How long a lookup stays fresh. Playtime does not move fast enough to care.
 TTL = int(os.environ.get("CACHE_TTL", "900"))
 # Current players is a live reading. The expensive catalogue and achievement
@@ -870,6 +876,59 @@ def do_owner():
     return cached("owner", OWNER_TTL, fetch.build_owner)
 
 
+def public_status():
+    """What /status answers. Every figure here is about the service or about a
+    game; none of them is about a person.
+
+    The budget is a word and a percentage rather than a number of calls,
+    because the absolute is the owner's allowance and nobody else's business,
+    while "how close is this to stopping" is the one thing a reader who just
+    got an error actually wants to know.
+
+    Steam is reported as two hosts and not one. The Web API and
+    steamcommunity.com fail independently and constantly - the market rate
+    limits while the profile endpoints are fine - so a single green light
+    covering both would be wrong most of the times it mattered."""
+    store_stats = meta.stats()
+    art_stats = art.stats()
+    community_stats = community.stats()
+    spent = guard.spent_today()
+    used = spent / guard.BUDGET if guard.BUDGET else 0.0
+
+    return {
+        "ok": True,
+        "started_at": int(STARTED),
+        "now": int(time.time()),
+        "steam": {
+            # Cold lookups stop at the ceiling; everything already cached keeps
+            # being served, which is why this is not simply up or down.
+            "budget": ("spent" if used >= 1 else "tight" if used >= 0.75
+                       else "normal"),
+            "budget_used": round(min(used, 1.0) * 100),
+            # The whole of steamcommunity.com under one light: the market, the
+            # inventories and the profile scrapes share one budget, so they go
+            # quiet together and there is nothing to tell apart.
+            "community": ("cooling" if community_stats["cooling_for"] > 0
+                          else "ok"),
+            "cooling_for": community_stats["cooling_for"],
+        },
+        "known": {
+            # Games enter one library at a time, so this is not the Steam
+            # catalogue - it is how much of it has been through here.
+            "games": store_stats["apps"],
+            "detailed": store_stats["detailed"],
+            "reviewed": store_stats["reviewed"],
+            # The catalogue proper, which is synced whole rather than learned.
+            "catalogue": store_stats["search_games"],
+            "houses": houses.state()["houses"],
+            "deck": proton.state(),
+            "art": {"count": art_stats["count"], "bytes": art_stats["bytes"]},
+            "warm": len(_cache),
+        },
+        "traffic": census.public(),
+    }
+
+
 def do_blocks():
     """Everything about shut-out addresses, keyed by address rather than by row.
 
@@ -1327,7 +1386,7 @@ class Handler(BaseHTTPRequestHandler):
     # like the ban notice and the appeal form.
     SITEMAP_PAGES = ("/", "/about", "/blog", "/feedback", "/support", "/privacy",
                      "/privacy/history", "/publishers", "/developers",
-                     "/extension")
+                     "/extension", "/translate", "/status")
 
     # The franchise screens. Which exist is decided in the front end's two
     # catalogue files, so this is a copy, and it is a copy on purpose: the api
@@ -1511,6 +1570,18 @@ class Handler(BaseHTTPRequestHandler):
                                             "guard": guard.state(),
                                             "blocks": blocks.state(),
                                             "census": census.state()})
+            if url.path == "/status":
+                # The public half of /healthz, and the split is the point.
+                # /healthz is an operator's page: it prints the gate's
+                # counters, the ban table and what the census is holding,
+                # because the person reading it is the person who runs this.
+                # This is for a visitor, so it answers the three questions a
+                # visitor actually has - is it up, is Steam answering, how much
+                # does it know - and nothing that describes one address, one
+                # profile or one country.
+                self.gate("status")
+                return self.send_json(200, cached("status", 30, public_status),
+                                      ttl=30)
             if url.path == "/art":
                 # Only ever reached on a miss: nginx serves data/art directly
                 # and falls back here when the file is not there yet. Key art
