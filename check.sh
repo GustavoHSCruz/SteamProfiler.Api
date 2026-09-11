@@ -73,6 +73,8 @@ if command -v docker >/dev/null 2>&1; then
     docker run --rm --add-host api:127.0.0.1 \
       -v "$ROOT/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
       nginx:alpine nginx -t
+  step "dict routing" ./tools/check-dict-routing.sh
+
   # `env_file: .env` makes compose refuse to parse the file at all when .env is
   # missing, and .env is gitignored - so it is missing in every clean checkout,
   # which is to say in CI and in the tree the deploy exports. Validating the
