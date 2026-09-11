@@ -284,8 +284,10 @@
   <p><a href="/" data-i18n="nav.back_site"></a></p>
 </footer>
 
+<!-- /dict.js is one language, chosen by server.py from the sp-lang cookie the
+     same way nginx chooses for the site. -->
 <script src="/dict.js"></script>
-<!-- After dict.js, which it merges into, and before i18n.js, which reads it. -->
+<!-- After the dictionary, which it merges into, and before i18n.js, which reads it. -->
 <script src="/admin-dict.js"></script>
 <script src="/i18n.js"></script>
 <script src="/lib.js"></script>

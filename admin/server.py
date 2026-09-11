@@ -426,6 +426,23 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     # ── Routing ──────────────────────────────────────────────────────
+    def dict_lang(self):
+        """The language for /dict.js: the cookie the picker wrote, then the
+        browser's own preference, then English. Same order as nginx and as the
+        front's serve.py, and the languages are read off disk so that adding one
+        needs no line here."""
+        have = sorted(p.name.split(".")[1] for p in SITE.glob("dict.*.js"))
+        cookie = self.headers.get("Cookie") or ""
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "sp-lang" and value in have:
+                return value
+        for tag in (self.headers.get("Accept-Language") or "").split(","):
+            code = tag.strip().split(";")[0].lower()[:2]
+            if code in have:
+                return code
+        return "en"
+
     def do_GET(self):
         if not self.allowed_address():
             return self.send_json(403, {"error": "forbidden"})
@@ -477,6 +494,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"error": "sign in first"})
             code, body = call_api("/admin/blog")
             return self.send_json(code, body)
+
+        # The dictionary is one file per language, and /dict.js is whichever one
+        # this reader asked for. nginx does this for the site with a map on the
+        # cookie; the panel has its own server, so it does its own three steps,
+        # in the same order. Without this the language picker in the panel would
+        # move the cookie and change nothing on the page.
+        if path == "/dict.js":
+            return self.send_file(SITE / f"dict.{self.dict_lang()}.js")
 
         # Shared assets: the admin page reuses the site's stylesheet, fonts and
         # dictionary rather than growing a second copy that drifts.

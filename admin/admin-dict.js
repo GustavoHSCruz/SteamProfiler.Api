@@ -392,4 +392,6 @@ const ADM_DICT = {
 
 /* The panel's own keys join the shared ones, so t() finds both without knowing
    there are two sources. */
-for (const [lang, strings] of Object.entries(ADM_DICT)) Object.assign(DICT[lang], strings);
+/* The dictionary is one language deep now - the panel loads dict.en.js - so the
+   panel's own strings merge in flat, from the language that arrived. */
+Object.assign(DICT, ADM_DICT[typeof DICT_LANG === 'string' ? DICT_LANG : 'en'] || ADM_DICT.en);
