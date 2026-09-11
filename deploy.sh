@@ -230,7 +230,11 @@ fi
 
 recria() { # <serviço> <motivo>
   log "$2, recriando $1"
-  ssh "$REMOTO" "cd $DESTINO && docker compose up -d --force-recreate $1" 2>&1 \
+  # --build porque o código da api e do painel é copiado para dentro da imagem
+  # (`build: context: .`), não montado. Recriar sem reconstruir sobe o
+  # container novo com o código velho: em 11/09/2026 o painel continuou
+  # servindo o admin.js quebrado depois do conserto já estar no disco.
+  ssh "$REMOTO" "cd $DESTINO && docker compose up -d --build --force-recreate $1" 2>&1 \
     | sed 's/^/          /' \
     || morre "$1: não subiu"
 }
