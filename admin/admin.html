@@ -245,6 +245,47 @@
         </div>
       </article>
 
+      <!-- ── The screens ─────────────────────────────────────────────
+           Which screen was opened, by name. The third count, and the one that
+           is a page rather than a person: /u/<who>/cards is counted as
+           "u.cards" and the profile is dropped before the count is taken, so
+           this half has no more idea who was here than the one below has.
+
+           Four families in one panel and not four panels, because /u is most
+           of the traffic and the other three are read against it - a
+           comparison that four boxes would break up. The bars share one
+           scale for the same reason. -->
+      <article class="panel" data-exp="1">
+        <div class="panel-bar">
+          <span data-i18n="adm.cen_screens"></span><b id="cen-screen-window">-</b>
+        </div>
+        <div class="panel-body">
+          <p class="card-body" data-i18n="adm.cen_screens_note"></p>
+          <div class="screen-bar">
+            <div class="field">
+              <label for="cen-screen-class" data-i18n="adm.cen_classes"></label>
+              <select class="select" id="cen-screen-class">
+                <option value="visitor" data-i18n="cen.class.visitor"></option>
+                <option value="" data-i18n="adm.cen_screen_any"></option>
+                <option value="ai" data-i18n="cen.class.ai"></option>
+                <option value="search" data-i18n="cen.class.search"></option>
+                <option value="tool" data-i18n="cen.class.tool"></option>
+                <option value="scanner" data-i18n="cen.class.scanner"></option>
+                <option value="unknown" data-i18n="cen.class.unknown"></option>
+              </select>
+            </div>
+            <span class="form-note" id="cen-screen-total"></span>
+          </div>
+          <div id="cen-screens"></div>
+          <h3 class="card-meta" data-i18n="adm.cen_screen_games"></h3>
+          <div class="bars" id="cen-screen-games"></div>
+          <h3 class="card-meta" data-i18n="adm.cen_screen_days"></h3>
+          <div class="bars" id="cen-screen-per-day"></div>
+          <p class="form-note" data-i18n="adm.cen_screen_note"></p>
+          <p class="empty" id="cen-screens-empty" hidden data-i18n="adm.cen_none"></p>
+        </div>
+      </article>
+
       <!-- The profile half. No visitor is named here and none can be. -->
       <article class="panel" data-exp="1">
         <div class="panel-bar">

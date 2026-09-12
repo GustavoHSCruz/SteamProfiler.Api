@@ -57,6 +57,11 @@ class PublicStatusTest(unittest.TestCase):
         "by_class", "by_country", "by_region", "visitors", "subjects",
         "subject_totals", "per_day", "history", "steamid", "ip_hash",
         "hash", "country", "region", "confidence", "class",
+        # The screen count is the owner's too. A weekly total of requests is
+        # nobody; "the Deck screen was opened four times this week" on a site
+        # this size, some weeks, is one person's afternoon.
+        "screens", "screen_days", "screen_games", "screen_window_days",
+        "pending_views",
         "tracked", "blocked", "denied", "bans", "appeals", "exempt_local",
         "ephemeral", "pending_subjects",
         "steam_calls_today", "budget_calls", "BUDGET",

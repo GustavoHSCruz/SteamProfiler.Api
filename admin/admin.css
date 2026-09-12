@@ -242,3 +242,32 @@
    differently: a guess and a declaration should not look alike. */
 .bar-row[data-conf="declared"] .bar-fill { background: var(--exp); }
 .bar-row[data-conf="unsure"] .bar-fill { background: var(--faint); }
+
+/* ── The screens ──────────────────────────────────────────────────────
+   The filter and the families, which are the only two things the bars above
+   did not already dress. The filter sits above the list rather than in the
+   panel bar because it changes every number below it, and a control that
+   changes what you are reading belongs in the reading, not in the title. */
+.screen-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 16px 0 4px;
+}
+.screen-bar .field { margin-bottom: 0; }
+.screen-bar .select { width: auto; min-width: 160px; }
+.screen-bar .form-note { margin: 0 0 7px; }
+
+/* A heading with the family's own total on the other end of it, so a family
+   can be read as one number without adding up its rows. */
+.fam { margin-top: 14px; }
+.fam-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.fam-head .card-meta { margin: 0; }
+.fam-head b { font-family: var(--mono); font-size: 12px; color: var(--text); }

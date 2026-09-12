@@ -876,6 +876,26 @@ def do_owner():
     return cached("owner", OWNER_TTL, fetch.build_owner)
 
 
+def do_census():
+    """The count, with the game screens' appids given their names.
+
+    census.py does not do this itself and should not start: it would have to
+    import meta.py, and the one module that sees addresses is the last place to
+    grow a dependency on the module that talks to Steam. So the naming happens
+    out here, on the way to the panel, and it is a read of what is already
+    cached - meta.lookup() never fetches, so an appid nobody has opened a page
+    for keeps its number and costs nothing."""
+    report = census.report()
+    games = report.get("screen_games") or []
+    appids = [int(g["appid"]) for g in games if g["appid"].isdigit()]
+    known = meta.lookup(appids) if appids else {}
+    for game in games:
+        row = known.get(int(game["appid"])) if game["appid"].isdigit() else None
+        if row and row.get("name"):
+            game["name"] = row["name"]
+    return report
+
+
 def public_status():
     """What /status answers. Every figure here is about the service or about a
     game; none of them is about a person.
@@ -1889,7 +1909,7 @@ class Handler(BaseHTTPRequestHandler):
                 # than the last time the timer fired. Reading it is the one
                 # moment where being a minute stale would be noticed.
                 census.flush()
-                return self.send_json(200, census.report())
+                return self.send_json(200, do_census())
             if url.path == "/og.png":
                 # Takes whatever is in the URL rather than a steamid, because
                 # nginx hands it the path segment and knows nothing else. The

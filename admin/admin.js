@@ -666,6 +666,61 @@ el('blog-form').addEventListener('submit', async (e) => {
 
 const CEN_CLASSES = ['visitor', 'ai', 'search', 'tool', 'scanner', 'unknown'];
 
+/* What a screen is called on the panel: the address it answers at, with the
+   parts that change left as a placeholder. Not a translated name, and that is
+   a decision rather than a shortcut - a path is the same in every language,
+   it cannot drift from what the site actually serves without somebody
+   noticing, and it is how these screens get talked about anyway. The names
+   themselves are census.py's, one for one.
+
+   A screen the api knows and this does not is drawn under its bare name, so a
+   route added on the server shows up here as `u.whatever` rather than not at
+   all. */
+const SCREEN_PATHS = {
+  'u.dash': '/u/…',
+  'u.game': '/u/…/<appid>',
+  'u.versus': '/u/…/vs/…',
+  'u.backlog': '/u/…/backlog',
+  'u.cards': '/u/…/cards',
+  'u.year': '/u/…/year/<year>',
+  'u.franchises': '/u/…/franchises',
+  'u.franchise': '/u/…/franchises/<slug>',
+  'u.publishers': '/u/…/publishers',
+  'u.publisher': '/u/…/publishers/<slug>',
+  'u.developers': '/u/…/developers',
+  'u.developer': '/u/…/developers/<slug>',
+  'u.deck': '/u/…/deck',
+  'u.embed': '/u/…/embed',
+  'u.ids': '/u/…/ids',
+  'cat.game': '/g/<appid>',
+  'cat.franchises': '/franchises',
+  'cat.franchise': '/franchises/<slug>',
+  'cat.publishers': '/publishers',
+  'cat.publisher': '/publishers/<slug>',
+  'cat.developers': '/developers',
+  'cat.developer': '/developers/<slug>',
+  'blog.index': '/blog',
+  'blog.post': '/blog/<post>',
+  'site.home': '/',
+  'site.news': '/news',
+  'site.news_post': '/news/<id>',
+  'site.about': '/about',
+  'site.privacy': '/privacy',
+  'site.privacy_log': '/privacy/history',
+  'site.status': '/status',
+  'site.feedback': '/feedback',
+  'site.support': '/support',
+  'site.extension': '/extension',
+  'site.translate': '/translate',
+  'site.appeal': '/appeal',
+  'site.appeal_sent': '/appeal/sent',
+};
+const FAMILIES = ['u', 'cat', 'blog', 'site'];
+
+/* The last payload, kept so that changing the kind of caller redraws what is
+   already here instead of asking the server for the same fortnight again. */
+let census = null;
+
 function barRow(label, value, max, conf) {
   // A floor of 2%, so a count of one is a visible mark rather than an empty
   // track that reads as zero.
@@ -684,6 +739,63 @@ function fillBars(node, pairs, conf) {
     node.append(barRow(label, value, max, conf && conf[label]));
   }
 }
+
+/* One row's count under the chosen kind of caller, or its total when no kind
+   is chosen. */
+function ofKind(row, kind) {
+  const by = row.by_class || {};
+  return kind ? (by[kind] || 0) : Object.values(by).reduce((a, b) => a + b, 0);
+}
+
+function renderScreens() {
+  if (!census) return;
+  const kind = el('cen-screen-class').value;
+  const rows = (census.screens || [])
+    .map((r) => ({ screen: r.screen, n: ofKind(r, kind) }))
+    .filter((r) => r.n > 0);
+
+  const box = el('cen-screens');
+  box.textContent = '';
+  // One scale across all four families, not one per family: /u is most of the
+  // traffic and the point of the panel is seeing that, which four separately
+  // scaled groups of full-width bars would hide.
+  const max = rows.reduce((m, r) => Math.max(m, r.n), 0);
+  for (const family of FAMILIES) {
+    const mine = rows.filter((r) => r.screen.startsWith(`${family}.`));
+    if (!mine.length) continue;
+    const bars = h('div', { cls: 'bars' });
+    for (const r of mine) bars.append(barRow(SCREEN_PATHS[r.screen] || r.screen, r.n, max));
+    box.append(h('div', { cls: 'fam' },
+      h('div', { cls: 'fam-head' },
+        h('h3', { cls: 'card-meta', text: t(`adm.cen_fam_${family}`) }),
+        h('b', { text: String(mine.reduce((a, r) => a + r.n, 0)) })),
+      bars));
+  }
+  el('cen-screen-total').textContent =
+    t('adm.cen_screen_total', { n: rows.reduce((a, r) => a + r.n, 0) });
+  el('cen-screens-empty').hidden = rows.length > 0;
+
+  // The games behind the two game screens. The name comes from the store
+  // cache when it is there, and the number stands in for it when it is not.
+  const games = (census.screen_games || [])
+    .map((g) => ({ ...g, n: ofKind(g, kind) }))
+    .filter((g) => g.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 15)
+    .map((g) => [`${g.name || g.appid} ${g.screen === 'cat.game' ? '/g' : '/u'}`, g.n]);
+  fillBars(el('cen-screen-games'), games);
+
+  // A row of zeroes is a row of empty tracks, which reads as a broken panel
+  // rather than as "this kind of caller never opened anything". A day that is
+  // zero while its neighbours are not stays, because there the zero is the
+  // information.
+  const days = Object.entries(census.screen_days || {})
+    .map(([day, by]) => [day, ofKind({ by_class: by }, kind)])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  fillBars(el('cen-screen-per-day'), days.some(([, n]) => n > 0) ? days : []);
+}
+
+el('cen-screen-class').addEventListener('change', renderScreens);
 
 async function loadCensus() {
   let d;
@@ -733,6 +845,10 @@ async function loadCensus() {
   const perDay = Object.entries(d.per_day).sort((a, b) => a[0].localeCompare(b[0]));
   fillBars(el('cen-per-day'), perDay);
   el('cen-empty').hidden = totals.length > 0;
+
+  census = d;
+  el('cen-screen-window').textContent = `${d.screen_window_days}d`;
+  renderScreens();
 
   const hist = (d.history || []).map((row) => {
     const when = new Date(row.began_at * 1000).toLocaleDateString();
