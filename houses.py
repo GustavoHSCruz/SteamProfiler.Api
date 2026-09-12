@@ -198,6 +198,10 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=20)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # NORMAL rather than FULL, like the other caches - see meta.py. A publisher
+    # learned twice is a publisher learned; nothing in this file is a fact that
+    # only exists here.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con

@@ -99,6 +99,10 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # FULL, not the NORMAL the caches use. A cache may lose its last second; a
+    # shut door may not - surviving a restart is the entire reason this one is
+    # on disk at all. Written rarely, so being strict costs nothing.
+    con.execute("PRAGMA synchronous=FULL")
     try:
         with con:
             yield con

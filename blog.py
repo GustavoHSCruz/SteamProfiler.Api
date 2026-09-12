@@ -83,6 +83,11 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # FULL, deliberately, while the caches around it run on NORMAL. This is the
+    # one database holding something a person typed, and nothing re-derives a
+    # post that a power cut swallowed. It is also written one post at a time by
+    # one author, so the fsync it costs is never in a visitor's way.
+    con.execute("PRAGMA synchronous=FULL")
     con.execute("PRAGMA foreign_keys=ON")
     try:
         with con:

@@ -184,6 +184,12 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # NORMAL rather than FULL - see meta.py for the measurement. This one is not
+    # re-derivable and still belongs on NORMAL: what a power cut can lose is the
+    # counts since the last flush, and a visit counted as zero visits is the
+    # error this file was already built to tolerate. Losing the whole week to a
+    # 135ms write on the request path is not.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con

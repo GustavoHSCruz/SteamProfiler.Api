@@ -64,6 +64,10 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # FULL, like blog.py and unlike the caches: somebody typed this. A message
+    # that arrived, was answered with "recebido" and then vanished is worse than
+    # a slow write, and the traffic here is a handful of messages a day.
+    con.execute("PRAGMA synchronous=FULL")
     con.execute("PRAGMA foreign_keys=ON")
     try:
         with con:

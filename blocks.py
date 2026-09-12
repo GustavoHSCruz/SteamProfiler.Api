@@ -67,6 +67,10 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # FULL, for the same reason bans.py is: this is a decision somebody made
+    # about a profile, not a fact Steam will repeat if asked. Written by hand,
+    # and almost never.
+    con.execute("PRAGMA synchronous=FULL")
     try:
         with con:
             yield con

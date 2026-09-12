@@ -131,6 +131,11 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # NORMAL rather than SQLite's default FULL: see meta.py for the measurement
+    # (135ms a commit on the server's disk, against 0.05ms). Safe against a
+    # crash, not against a power cut - and what a power cut could cost here is a
+    # few card prices that the market is asked for again anyway.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con

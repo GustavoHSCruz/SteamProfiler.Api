@@ -89,6 +89,9 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=20)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # NORMAL rather than FULL, like the other caches - see meta.py. Everything
+    # here came from ProtonDB and can come from there again.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con

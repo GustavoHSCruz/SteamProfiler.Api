@@ -176,6 +176,21 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # WAL on its own still fsyncs on every commit, because SQLite's default is
+    # synchronous=FULL. Measured on the server's disk - one 5400rpm spindle that
+    # everything on the box shares - that is 135ms a commit against 0.05ms here.
+    # A commit holds _db_lock while it waits, and the lock in api.py's cached()
+    # is held across the build queued behind that, which is how a crawl writing
+    # rows ends as the api answering 503 to somebody who only wanted to read.
+    #
+    # NORMAL is safe against a crash and not against a power cut: the file is
+    # never corrupted, and the last transactions to commit can be lost. For this
+    # file that is the right trade - every row in it is a question the storefront
+    # will answer again, and the crawl asks it again on its own.
+    #
+    # It is NOT the trade for blog.py, store.py, bans.py and blocks.py. Those
+    # four say FULL out loud, each for its own reason.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con

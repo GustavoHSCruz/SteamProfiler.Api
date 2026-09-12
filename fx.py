@@ -107,6 +107,10 @@ def _connect():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    # NORMAL rather than FULL, like the other caches - see meta.py. One rate a
+    # day is written here, and the worst a power cut can do is send the next
+    # start to ask for today's rate a second time.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         with con:
             yield con
