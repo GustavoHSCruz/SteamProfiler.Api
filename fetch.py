@@ -13,6 +13,7 @@ here - api.py holds a lock around set_user + build, and the cache in front of it
 means almost no request reaches this code at all.
 """
 
+import concurrent.futures
 import html
 import json
 import os
@@ -140,6 +141,58 @@ def spend(n=1):
 def calls():
     with _calls_lock:
         return _calls
+
+
+
+# How many of a build's requests may be in the air at once. Ten because that is
+# the width of the fan-out in build_profile, and there is nothing to gain by
+# queueing the tenth behind the ninth: they are ten independent questions to a
+# host that answers each of them in anything from a fifth of a second to five,
+# and asked one after another the visitor waits for the sum instead of for the
+# slowest one.
+#
+# Ten threads is not ten times the load on Steam. It is the same ten requests a
+# cold build always made, made together - the allowance guard.py spends against
+# is counted per request and not per second, and spend() counts these the same
+# way it counted them in a row.
+#
+# Overridable, and setting it to 1 turns every gather() below back into the
+# plain sequence it replaced. That is the switch to reach for when a build is
+# behaving strangely and the question is whether concurrency is why.
+FANOUT = int(os.environ.get("FETCH_FANOUT", "10"))
+
+
+def gather(jobs):
+    """Run independent fetches together and return {name: result}.
+
+    `jobs` maps a name to a callable of no arguments; the answer maps the same
+    names to what each returned. Written order is what decides which failure a
+    visitor sees: the jobs are waited on in the order they appear, so a build
+    that used to die on the first of two bad calls still dies on that one and
+    still reports its message, rather than on whichever thread finished first.
+
+    Exceptions cross back into the calling thread untouched - a SteamError still
+    means "show the visitor a 4xx" by the time api.py sees it. The other jobs
+    are left to finish before it surfaces: their requests are already sent by
+    then, and cancelling would drop answers Steam is going to send anyway.
+
+    Only ever called with jobs that touch nothing shared. The module state they
+    read - STEAM_ID, PROFILE_URL - is written once by set_user() under api.py's
+    one lock and never changes under a build; the two mutable things a job here
+    can reach, _calls and _level_cache, have locks of their own.
+
+    What does NOT belong in here is two requests to steamcommunity.com. That
+    host answers a burst with a 429 that then lasts minutes, which is the whole
+    reason community.py exists; scrapes stay a sequence and the sequence is what
+    gets handed over as one job."""
+    if len(jobs) <= 1 or FANOUT <= 1:
+        return {name: job() for name, job in jobs.items()}
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(FANOUT, len(jobs)),
+            thread_name_prefix="fetch") as pool:
+        futures = {name: pool.submit(job) for name, job in jobs.items()}
+        # Deliberately not as_completed(): see above on which failure wins.
+        return {name: f.result() for name, f in futures.items()}
 
 
 def get_json(path, envelope="response", required=True, with_steamid=True, **params):
@@ -3408,39 +3461,88 @@ def build_profile():
     if not games:
         raise SteamError("@err.games_hidden")
 
-    summaries = get_json("ISteamUser/GetPlayerSummaries/v2/", steamids=STEAM_ID,
-                         with_steamid=False)
-    player = (summaries.get("players") or [{}])[0]
-    level = get_json("IPlayerService/GetSteamLevel/v1/", required=False).get("player_level")
-    recent = get_json("IPlayerService/GetRecentlyPlayedGames/v1/", required=False).get("games", [])
-    badges = get_json("IPlayerService/GetBadges/v1/", required=False)
-    items = profile_items()
-    record = ban_record()
-    percentile = level_percentile(level)
-    published = workshop_count()
-    # Groups as a number and nothing else, which is all Steam publishes without
-    # a request per group. GetUserGroupList answers bare 64-bit ids; the profile
-    # XML, which would have been free, has no groups block at all any more -
-    # measured on a profile that is in seventeen of them. The names live only on
-    # each group's own memberslistxml, and seventeen requests to the host
-    # cards.py is pacing is not a panel, it is an outage.
-    group_ids = ((get_json("ISteamUser/GetUserGroupList/v1/", required=False)
-                  or {}).get("groups") or [])
+    # Everything else this build needs, asked for at once rather than one at a
+    # time. Ten independent questions: nine to the key-authenticated API and one
+    # to the community site, which is itself three scrapes that have to stay in
+    # a row. A cold build used to cost the sum of all of them; it now costs the
+    # slowest.
+    #
+    # The library above is not in here on purpose. A hidden library ends the
+    # build, and ending it before ten more requests go out is the difference
+    # between a refused lookup costing one call and eleven.
+    def community_pages():
+        """The three steamcommunity.com scrapes, in order, on one thread.
 
-    scraped = scrape_profile()
-    # Whether the community site is answering this build at all. The badge page
-    # is a third request to it, and the profile page has already asked the same
-    # question: when it came back with nothing - rate-limited, or a profile that
-    # shows a stranger nothing - asking again spends a request to be told so
-    # twice, and spends it at the exact moment Steam is asking for less.
-    reachable = bool(scraped)
-    # `is not None` rather than a plain truth test. The filter is here so an
-    # empty XML field cannot clobber something the HTML scrape got right, and
-    # parse_xml already drops the empty ones - but it also answers booleans now,
-    # and `limited: False` is the good, common case that a truth test would
-    # throw away, turning "this account is fine" into "nobody knows".
-    scraped.update({k: v for k, v in scrape_xml().items() if v is not None})
-    worn = scrape_badges() if reachable else {"list": [], "total": None}
+        These do not fan out. That host is the one that answers a burst of a
+        dozen with a 429 lasting minutes, so they stay a sequence - and the
+        sequence runs beside the API calls instead of after them, which is where
+        the three round trips they cost actually go away.
+
+        The order inside is the order it always was, and for the reason it
+        always was: the profile page says whether the community site is
+        answering this build at all, and the badge page is a third request to
+        it. When the profile page came back with nothing - rate-limited, or a
+        profile that shows a stranger nothing - asking again spends a request to
+        be told so twice, and spends it at the exact moment Steam is asking for
+        less."""
+        scraped = scrape_profile()
+        reachable = bool(scraped)
+        # `is not None` rather than a plain truth test. The filter is here so an
+        # empty XML field cannot clobber something the HTML scrape got right,
+        # and parse_xml already drops the empty ones - but it also answers
+        # booleans now, and `limited: False` is the good, common case that a
+        # truth test would throw away, turning "this account is fine" into
+        # "nobody knows".
+        scraped.update({k: v for k, v in scrape_xml().items() if v is not None})
+        worn = scrape_badges() if reachable else {"list": [], "total": None}
+        return scraped, worn
+
+    def level_and_rank():
+        """The level and where it sits against everybody else's. One after the
+        other because the second is a question about the answer to the first,
+        and both behind one name because that is one thread's work."""
+        level = get_json("IPlayerService/GetSteamLevel/v1/",
+                         required=False).get("player_level")
+        return level, level_percentile(level)
+
+    got = gather({
+        # First, because it is the only one of these that can fail the build:
+        # everything else is required=False and answers empty. gather() waits in
+        # this order, so a private profile still reports what it always did.
+        "summaries": lambda: get_json("ISteamUser/GetPlayerSummaries/v2/",
+                                      steamids=STEAM_ID, with_steamid=False),
+        "level": level_and_rank,
+        "recent": lambda: get_json("IPlayerService/GetRecentlyPlayedGames/v1/",
+                                   required=False).get("games", []),
+        "badges": lambda: get_json("IPlayerService/GetBadges/v1/", required=False),
+        "items": profile_items,
+        "record": ban_record,
+        "published": workshop_count,
+        # Groups as a number and nothing else, which is all Steam publishes
+        # without a request per group. GetUserGroupList answers bare 64-bit ids;
+        # the profile XML, which would have been free, has no groups block at
+        # all any more - measured on a profile that is in seventeen of them. The
+        # names live only on each group's own memberslistxml, and seventeen
+        # requests to the host cards.py is pacing is not a panel, it is an
+        # outage.
+        "groups": lambda: ((get_json("ISteamUser/GetUserGroupList/v1/", required=False)
+                            or {}).get("groups") or []),
+        # Up to three calls of its own, which is exactly why it is here rather
+        # than at the bottom of the build where it used to be.
+        "friends": build_friends,
+        "community": community_pages,
+    })
+
+    player = (got["summaries"].get("players") or [{}])[0]
+    level, percentile = got["level"]
+    recent = got["recent"]
+    badges = got["badges"]
+    items = got["items"]
+    record = got["record"]
+    published = got["published"]
+    group_ids = got["groups"]
+    friend_list = got["friends"]
+    scraped, worn = got["community"]
 
     played = [g for g in games if g.get("playtime_forever", 0) > 0]
     total_min = sum(g.get("playtime_forever", 0) for g in games)
@@ -3614,7 +3716,7 @@ def build_profile():
         "genres": economics["genres"],
         "store_coverage": economics["coverage"],
         # Who this profile can be put side by side with, when Steam will say.
-        "friend_list": build_friends(),
+        "friend_list": friend_list,
         "now": {
             "playing": player.get("gameextrainfo"),
             "hours_2weeks": round(sum(g.get("playtime_2weeks", 0) for g in recent) / 60, 1),
