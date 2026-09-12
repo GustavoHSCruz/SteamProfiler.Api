@@ -33,6 +33,12 @@ function itemFor(m, reload) {
     attr: { type: 'text', maxlength: '600', placeholder: t('adm.reply_ph') },
   });
   reply.value = m.reply || '';
+  // O que veio do servidor, guardado ao lado do campo. É como a leitura
+  // automática sabe que tem resposta escrita e não salva aqui: ela compara em
+  // vez de adivinhar por foco, então quem escreve meia frase, sai pra pegar
+  // um café e volta continua com a meia frase na tela.
+  reply.dataset.was = reply.value;
+  status.dataset.was = m.status;
 
   const save = h('button', { cls: 'btn', attr: { type: 'button' }, text: t('adm.save') });
   const drop = h('button', { cls: 'btn btn--danger', attr: { type: 'button' }, text: t('adm.delete') });
@@ -142,6 +148,9 @@ function appealIn(m, reload) {
     attr: { type: 'text', maxlength: '600', placeholder: t('adm.reply_ph') },
   });
   reply.value = m.reply || '';
+  // Mesmo motivo que na triagem: a leitura automática compara com isto antes
+  // de redesenhar o card.
+  reply.dataset.was = reply.value;
 
   const seen = h('button', { cls: 'btn btn--quiet', attr: { type: 'button' }, text: t('adm.mark_read') });
   seen.addEventListener('click', async () => {
@@ -804,6 +813,8 @@ async function loadCensus() {
   } catch (e) {
     el('cen-empty').hidden = false;
     el('cen-empty').textContent = e.message;
+    // Sem marcar a hora: a idade no rótulo continua crescendo, que é o que
+    // diz a verdade sobre o que está na tela.
     return;
   }
 
@@ -850,6 +861,8 @@ async function loadCensus() {
   el('cen-screen-window').textContent = `${d.screen_window_days}d`;
   renderScreens();
 
+  seenAt.census = Date.now();
+
   const hist = (d.history || []).map((row) => {
     const when = new Date(row.began_at * 1000).toLocaleDateString();
     return [when, row.visitors];
@@ -857,6 +870,115 @@ async function loadCensus() {
   fillBars(el('cen-history'), hist);
   el('cen-history-n').textContent = String((d.history || []).length);
 }
+
+/* ── Ao vivo ───────────────────────────────────────────────────────────
+   O painel relê sozinho o que está na tela. Três regras, e as três existem
+   porque a alternativa já foi tentada em algum lugar e dá errado:
+
+     só com a aba à vista   document.visibilityState. Uma aba esquecida atrás
+                            de outras dez não precisa de nada, e cada leitura
+                            da contagem força um flush no api.
+
+     nunca por cima do que   Se tem resposta escrita e não salva, ou o cursor
+     você escreveu           está num campo, a leitura espera - e o rótulo diz
+                            que está esperando, senão a pausa parece travamento.
+
+     a idade, sempre visível  O rótulo conta há quanto tempo é o que está na
+                            tela. Se o api cair, o número cresce em vez de
+                            mentir que acabou de ler.
+
+   O recado é lido sempre, mesmo com outra aba aberta, porque os selos das abas
+   são o que avisa que chegou coisa nova. A contagem só com a aba dela aberta.
+   O blog não é relido nunca: o que importa lá é o editor, e editor que se
+   recarrega sozinho é editor que come texto. */
+const LIVE_KEY = 'sp-adm-live';
+const LIVE_TICK = 5000;
+const LIVE_EVERY = { inbox: 60000, census: 30000 };
+const seenAt = { inbox: 0, census: 0 };
+let liveOn = true;
+let reading = false;
+
+function viewNow() {
+  const tab = document.querySelector('#tabs .tab[data-on]');
+  return tab ? tab.dataset.view : 'mail';
+}
+
+/** Tem coisa escrita e não salva aqui dentro, ou o cursor está num campo. */
+function busyIn(id) {
+  const root = el(id);
+  const on = document.activeElement;
+  // Sem SELECT: ele fica com o foco depois de escolhido, e usar o filtro da
+  // contagem seguraria a leitura pro resto da sessão. Um select mexido e não
+  // salvo é pego pela comparação com data-was, logo abaixo.
+  if (on && root.contains(on) && /^(INPUT|TEXTAREA)$/.test(on.tagName)) return true;
+  for (const field of root.querySelectorAll('[data-was]')) {
+    if (field.value !== field.dataset.was) return true;
+  }
+  return false;
+}
+
+function paintLive() {
+  const note = el('live-note');
+  if (!liveOn) {
+    note.textContent = t('adm.live_off');
+    return;
+  }
+  if (reading) {
+    note.textContent = t('adm.live_now');
+    return;
+  }
+  const view = viewNow();
+  const key = view === 'census' ? 'census' : 'inbox';
+  if (busyIn(view === 'census' ? 'view-census' : 'view-mail')) {
+    note.textContent = t('adm.live_hold');
+    return;
+  }
+  const age = Math.round((Date.now() - (seenAt[key] || Date.now())) / 1000);
+  note.textContent = age < 10 ? t('adm.live_just')
+    : age < 90 ? t('adm.live_secs', { n: age })
+      : t('adm.live_mins', { n: Math.round(age / 60) });
+}
+
+async function liveTick() {
+  paintLive();
+  if (!liveOn || reading || document.visibilityState !== 'visible') return;
+  if (el('inbox').hidden) return;                  // ninguém entrou ainda
+  const now = Date.now();
+  const jobs = [];
+  // O recado e os bloqueios vêm juntos, na mesma load(), e valem pra qualquer
+  // aba: é o que mantém os selos honestos enquanto você olha outra coisa.
+  if (now - seenAt.inbox >= LIVE_EVERY.inbox && !busyIn('view-mail')) jobs.push(load);
+  if (viewNow() === 'census' && now - seenAt.census >= LIVE_EVERY.census) jobs.push(loadCensus);
+  if (!jobs.length) return;
+  reading = true;
+  el('live-bar').dataset.reading = '1';
+  paintLive();
+  // Em série e não em paralelo: são duas leituras do mesmo api, e uma delas
+  // faz o censo gravar o que tinha na memória.
+  for (const job of jobs) await job();
+  reading = false;
+  delete el('live-bar').dataset.reading;
+  paintLive();
+}
+
+el('live').addEventListener('change', () => {
+  liveOn = el('live').checked;
+  try { localStorage.setItem(LIVE_KEY, liveOn ? '1' : '0'); } catch { /* modo anônimo */ }
+  paintLive();
+  if (liveOn) liveTick();
+});
+
+// Voltou pra aba: lê agora, sem esperar o próximo tique. É o momento em que a
+// idade do que está na tela é exatamente o que a pessoa quer saber.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') liveTick();
+});
+
+try {
+  liveOn = localStorage.getItem(LIVE_KEY) !== '0';
+} catch { /* modo anônimo, fica ligado */ }
+el('live').checked = liveOn;
+setInterval(liveTick, LIVE_TICK);
 
 /* ── The inbox ─────────────────────────────────────────────────────── */
 
@@ -945,6 +1067,11 @@ async function load() {
   // Its own request again, and its own failure: the blog is the newest third
   // of this panel and neither of the other two should go dark with it.
   loadBlog();
+
+  // A hora do que está na tela, e só quando deu certo: as duas saídas de erro
+  // acima voltam sem passar por aqui.
+  seenAt.inbox = Date.now();
+  paintLive();
 }
 
 function show(message) {

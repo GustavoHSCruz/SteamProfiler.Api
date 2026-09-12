@@ -108,6 +108,21 @@
       </button>
     </nav>
 
+    <!-- ── Ao vivo ─────────────────────────────────────────────────
+         Uma linha, embaixo das abas, porque vale pro painel inteiro e não
+         pra uma aba só. O rótulo diz a idade do que está na tela em vez de
+         dizer "ao vivo" e pronto: a única coisa pior que um número velho é um
+         número velho com cara de novo. Quando a leitura automática está
+         segurando - porque tem coisa escrita e não salva - ele diz isso
+         também, senão a pausa parece travamento. -->
+    <div class="live" id="live-bar">
+      <label class="live-flag">
+        <input type="checkbox" id="live" checked>
+        <span data-i18n="adm.live"></span>
+      </label>
+      <span class="form-note" id="live-note"></span>
+    </div>
+
     <!-- Feedback -->
     <div id="view-mail">
       <div class="counts" id="counts"></div>
