@@ -1238,6 +1238,16 @@ class Handler(BaseHTTPRequestHandler):
                 f'<meta property="og:url" content="{esc(base + card["url"])}">',
                 f'<link rel="canonical" href="{esc(base + card["url"])}">',
             ]
+            # A post with a picture of its own is shared with it. This comes
+            # before the shell's og-blog.png, and the first og:image is the one
+            # a card is drawn from; a post without one falls through to that.
+            if card.get("image"):
+                path, alt = card["image"]
+                tags += [
+                    f'<meta property="og:image" content="{esc(base + path)}">',
+                    f'<meta property="og:image:alt" content="{esc(alt)}">',
+                    f'<meta name="twitter:image" content="{esc(base + path)}">',
+                ]
             # x-default points at the original: a reader whose language is none
             # of the three gets the version somebody actually wrote, which is
             # the same choice _pick makes on the page itself.

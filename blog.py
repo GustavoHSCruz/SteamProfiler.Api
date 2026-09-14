@@ -262,6 +262,22 @@ def _pick(texts, want, origin):
     return None, None
 
 
+# An image is a line of its own, `![what it shows](/path)`, and the path is
+# this site's: post.js draws nothing else, because the page's img-src is 'self'
+# and a picture hosted elsewhere is a request to a third party on every read.
+# `//host` is refused for the same reason - it is a same-looking absolute URL.
+IMAGE_RE = re.compile(r"^!\[([^\]\n]*)\]\((/(?!/)[^)\s]*)\)\s*$", re.M)
+
+
+def _image(body):
+    """The first picture in a post, as (path, alt), or None.
+
+    It is the card a link preview draws, so the post that opens with its cover
+    shares with that cover instead of the blog's generic one."""
+    m = IMAGE_RE.search(body or "")
+    return (m.group(2), m.group(1).strip()) if m else None
+
+
 def _excerpt(text, limit=240):
     """The first paragraph, with the markers taken off.
 
@@ -271,7 +287,7 @@ def _excerpt(text, limit=240):
     body = (text or "").strip()
     for block in re.split(r"\n\s*\n", body):
         block = block.strip()
-        if not block or block.startswith("```"):
+        if not block or block.startswith("```") or IMAGE_RE.match(block):
             continue
         flat = re.sub(r"^\s*(?:[#>-]+\s*)", "", block)
         flat = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", flat)
@@ -451,6 +467,7 @@ def preview(key, title=None):
             # 200 rather than the index's 240: this one lands in a card that
             # cuts it off itself, and being cut twice reads worse than short.
             "blurb": (text["lede"] or "").strip() or _excerpt(text["body"], 200),
+            "image": _image(text["body"]),
             "lang": served,
             "tags": _tags_of(row, text),
             "published_at": row["published_at"],
