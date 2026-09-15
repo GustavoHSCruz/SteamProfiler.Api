@@ -214,3 +214,7 @@ trademarks of Valve Corporation. Game names and art belong to their respective
 owners.
 
 Built with AI assistance, reviewed and shipped by a person.
+
+## Terms of use
+
+See [TERMS.md](TERMS.md) for this application’s terms and the Git-linked revision archive.

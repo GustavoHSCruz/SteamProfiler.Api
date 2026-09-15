@@ -98,6 +98,24 @@ limpa_worktrees() {
 exporta api "$API" "$TMP/api"
 exporta front "$FRONT" "$TMP/front"
 
+# Capture o commit antes de gerar HTML ou outros arquivos na worktree.
+if [ -f "$TMP/front/tools/gen-version.js" ]; then
+  VERSION_GIT=(--require-clean)
+  [ "$LOCAL" -eq 1 ] && VERSION_GIT=(--git-root "$FRONT")
+  ( cd "$TMP/front" && node tools/gen-version.js "${VERSION_GIT[@]}" ) > "$TMP/version.log" 2>&1 \
+    || { sed 's/^/          /' "$TMP/version.log"; morre "front: versão Git inválida"; }
+  log "front: versão vinculada ao commit Git"
+fi
+
+# Resolve os hashes no checkout publicado; nenhum rascunho sem commit sobe.
+if [ -f "$TMP/front/tools/gen-terms.js" ]; then
+  TERMS_GIT=()
+  [ "$LOCAL" -eq 1 ] && TERMS_GIT=(--git-root "$FRONT")
+  ( cd "$TMP/front" && node tools/gen-terms.js --require-commits "${TERMS_GIT[@]}" ) > "$TMP/terms.log" 2>&1 \
+    || { sed 's/^/          /' "$TMP/terms.log"; morre "front: histórico dos termos inválido"; }
+  log "front: termos vinculados aos commits Git"
+fi
+
 # ── A suíte, contra o que vai subir ──────────────────────────────────
 # Contra o export e não contra a árvore, porque é o export que vira produção.
 if [ -x "$TMP/api/check.sh" ]; then
@@ -117,13 +135,13 @@ fi
 # deploy morre aqui e o servidor continua servindo o que já estava lá.
 if [ -f "$TMP/front/next/package.json" ]; then
   log "front: instalando e compilando next/"
-  ( cd "$TMP/front/next" && npm ci --silent && npm run --silent build ) > "$TMP/next.log" 2>&1 \
+  ( cd "$TMP/front/next" && npm ci --silent && SP_SITE_VERSION_FILE="$TMP/front/site/version.json" npm run --silent build ) > "$TMP/next.log" 2>&1 \
     || { sed 's/^/          /' "$TMP/next.log"; morre "front: o build do next/ falhou"; }
   log "front: next/ compilado"
 fi
 
 if [ -x "$TMP/front/tools/check.sh" ]; then
-  ( cd "$TMP/front" && bash tools/check.sh "$TMP/front" ) > "$TMP/front.log" 2>&1 \
+  ( cd "$TMP/front" && SP_SITE_VERSION_FILE="$TMP/front/site/version.json" bash tools/check.sh "$TMP/front" ) > "$TMP/front.log" 2>&1 \
     || { sed 's/^/          /' "$TMP/front.log"; morre "front: checks falharam"; }
   log "front: checks ok"
 fi
