@@ -1,0 +1,555 @@
+/* SteamProfiler.UI 0.1.0 (dacc046+dirty). Generated: edit github.com/GustavoHSCruz/SteamProfiler.UI, not this copy. */
+
+/* ── Tokens ─────────────────────────────────────────────────────────────
+   The names are the ones the served site has used since the first stylesheet
+   and Duo copied: --bg, --panel, --accent. They are unprefixed on purpose. A
+   game page on steamprofiler.org restyles itself by redefining exactly these
+   variables, and a component that read --sp-accent instead would stay amber on
+   a page that has turned green.
+
+   The values are the bench's (next/), the newest cut: greys two or three steps
+   apart so a screen of hairlines does not turn into a wireframe. A front that
+   wants its own values declares :root after this file; nothing here is
+   !important and nothing here is layered. */
+
+:root {
+  color-scheme: dark;
+
+  --bg:       #08070c;
+  --panel:    #101017;
+  --panel-2:  #15151d;
+  --line:     #22212c;
+  --line-2:   #32313d;
+  --text:     #f1eff5;
+  --dim:      #948fa0;
+  --faint:    #5f5c6c;
+
+  /* One accent, and the ink that sits on it. */
+  --accent:   #ffb454;
+  --accent-d: #c97f22;
+  --on-accent:#16100a;
+  --link:     #9fb4ff;
+
+  /* Tones for tags and notices. Each is a border and a text colour; the fill
+     is the border at low alpha, mixed where it is used. */
+  --good:     #5ee08a;
+  --good-ink: #a8e8c0;
+  --bad:      #ff7a5c;
+  --bad-ink:  #ffb8a8;
+  --info:     #8fb4e0;
+  --violet:   #c79ae0;
+
+  /* The only gradient anywhere, and it is Hyprland's: the ring a panel wears
+     while it is pointed at. */
+  --focus-ring: linear-gradient(120deg, #33ccff, #a37bff 55%, #ff7ac4);
+
+  --r:         10px;   /* panel rounding */
+  --r-control: 8px;    /* buttons, inputs, notices */
+  --gap:       8px;    /* between tiled panels */
+
+  --display:    'Bricolage Grotesque', 'Archivo', system-ui, sans-serif;
+  --display-w:  800;
+  --display-ls: -0.04em;
+  --display-lh: 0.94;
+  --display-tt: none;
+  --sans:  'Archivo', system-ui, -apple-system, sans-serif;
+  --mono:  'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --label:    var(--mono);
+  --label-w:  500;
+  --label-ls: 0.16em;
+}
+
+/* ── Components ─────────────────────────────────────────────────────────
+   Every class is prefixed sp-, so the file can sit beside a front's own
+   stylesheet without either renaming the other. Nothing is layered: a front
+   that loads its own CSS after this one wins every tie, which is how a game
+   page gets to restyle a button. A front whose CSS is layered (Tailwind)
+   imports this file into a layer of its own choosing.
+
+   Sizes that differ between fronts are custom properties on the component
+   (--sp-panel-pad, --sp-input-pad), not variants: the site and the bench
+   want the same panel at different densities, and that is one knob. */
+
+/* ── Type ───────────────────────────────────────────────────────────── */
+
+.sp-display {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: var(--display-w);
+  font-size: var(--sp-display-size, clamp(1.9rem, 2.7vw, 2.9rem));
+  line-height: var(--display-lh);
+  letter-spacing: var(--display-ls);
+  text-transform: var(--display-tt);
+  text-wrap: balance;
+}
+
+.sp-eyebrow {
+  margin: 0;
+  font-family: var(--label);
+  font-size: 10px;
+  font-weight: var(--label-w);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.sp-lede {
+  margin: 0;
+  max-width: 54ch;
+  font-family: var(--sans);
+  font-size: var(--sp-lede-size, 13.5px);
+  line-height: 1.55;
+  color: var(--dim);
+  text-wrap: pretty;
+}
+.sp-lede b, .sp-lede strong { color: var(--text); font-weight: 600; }
+
+.sp-mono { font-family: var(--mono); }
+
+/* The 7px square before a title, the wordmark and anything live. */
+.sp-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.sp-wordmark {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-decoration: none;
+}
+.sp-wordmark::before {
+  content: "";
+  flex: none;
+  margin-right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.sp-wordmark span { color: var(--faint); font-weight: 400; }
+
+/* ── Button ─────────────────────────────────────────────────────────────
+   Neutral by default, because a screen with more than one amber button has
+   no primary action. --primary is the one per screen. */
+
+.sp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 9px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease, filter 140ms ease, transform 140ms ease;
+}
+.sp-btn:hover { border-color: var(--accent-d); color: var(--accent); }
+.sp-btn:active { transform: translateY(1px); }
+.sp-btn:disabled, .sp-btn[aria-disabled="true"] { opacity: 0.55; cursor: progress; transform: none; }
+.sp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sp-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.sp-btn--primary:hover { color: var(--on-accent); border-color: var(--accent); filter: brightness(1.08); }
+
+.sp-btn--quiet { background: transparent; color: var(--dim); font-weight: 500; }
+.sp-btn--quiet:hover { color: var(--text); border-color: var(--dim); }
+.sp-btn--quiet[aria-pressed="true"], .sp-btn--quiet[data-on="1"] { border-color: var(--accent); color: var(--accent); cursor: default; }
+
+.sp-btn--danger { background: transparent; border-color: #7a3630; color: #e08a7c; font-weight: 500; }
+.sp-btn--danger:hover { background: #7a36301f; border-color: #7a3630; color: #e08a7c; }
+
+/* A button that reads as a link in a line of mono: clear, cancel, undo. */
+.sp-btn--text {
+  min-height: 0;
+  padding: 4px 2px;
+  background: none;
+  border: 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sp-btn--text:hover { color: var(--dim); }
+
+.sp-btn--sm { min-height: 30px; padding: 6px 13px; font-size: 11.5px; }
+.sp-btn--lg { min-height: 46px; padding: 12px 22px; font-size: 14px; }
+
+/* ── Pill ───────────────────────────────────────────────────────────────
+   A round, mono, outlined link: the header's addresses, "the publishers",
+   "open on Steam". Active is amber, the way a current route is marked. */
+
+.sp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+.sp-pill:hover, .sp-pill:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent-d);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.sp-pill[aria-current], .sp-pill[data-on="1"] {
+  color: var(--accent);
+  border-color: var(--accent-d);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.sp-pill--sm { padding: 3px 11px; font-size: 10.5px; }
+.sp-pill--lg { padding: 8px 16px; font-size: 12px; }
+.sp-pill--quiet { border-color: var(--line); }
+
+/* ── Chip ───────────────────────────────────────────────────────────────
+   Square-cornered and filled: a filter or a jump link inside a panel, where a
+   pill would read as leaving the page. */
+
+.sp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  color: var(--dim);
+  font-family: var(--label);
+  font-size: 11px;
+  font-weight: var(--label-w);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sp-chip:hover { color: var(--text); border-color: var(--line-2); }
+.sp-chip[aria-pressed="true"], .sp-chip[data-on="1"] { color: var(--text); border-color: var(--accent-d); }
+
+/* ── Tag ────────────────────────────────────────────────────────────────
+   A status, not a control: small, round, never clickable. The tone is data. */
+
+.sp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.sp-tag[data-tone="accent"] { border-color: var(--accent-d); color: var(--accent); }
+.sp-tag[data-tone="good"]   { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); color: var(--good); }
+.sp-tag[data-tone="bad"]    { border-color: #7a3630; color: #e08a7c; }
+.sp-tag[data-tone="info"]   { border-color: #4a5f7a; color: var(--info); }
+.sp-tag[data-tone="violet"] { border-color: #6b4a7a; color: var(--violet); }
+.sp-tag[data-tone="muted"]  { border-color: var(--line-2); color: var(--faint); }
+.sp-tag[data-tone="alert"]  { border-color: #a3333c; background: #2a1619; color: #ff7b84; font-weight: 600; }
+
+/* ── Segmented ──────────────────────────────────────────────────────────
+   Two or three choices that change what a whole panel is for: profile or
+   game. A radio group drawn as one rounded track. */
+
+.sp-seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.sp-seg-btn {
+  padding: 3px 11px;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.sp-seg-btn:hover { color: var(--dim); }
+.sp-seg-btn[aria-pressed="true"], .sp-seg-btn[aria-checked="true"] { background: var(--panel-2); color: var(--text); }
+
+/* ── Field ──────────────────────────────────────────────────────────── */
+
+.sp-field { display: grid; gap: 8px; min-width: 0; }
+
+.sp-label {
+  display: block;
+  font-family: var(--label);
+  font-size: 10px;
+  font-weight: var(--label-w);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.sp-label em { font-style: normal; letter-spacing: 0; text-transform: none; color: var(--faint); }
+
+.sp-input, .sp-textarea, .sp-select {
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-input-pad, 11px 13px);
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.sp-input::placeholder, .sp-textarea::placeholder { color: var(--faint); }
+.sp-input:focus-visible, .sp-textarea:focus-visible, .sp-select:focus-visible {
+  border-color: var(--accent-d);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.sp-input--mono { font-family: var(--mono); }
+.sp-input--lg { --sp-input-pad: 14px 16px; }
+.sp-textarea { resize: vertical; min-height: 96px; }
+
+/* A real <select>: the list that drops out of it is the browser's. It carries
+   a real background because Chrome paints the popup with the select's own
+   colour, and transparent comes out white. */
+.sp-select {
+  appearance: none;
+  color-scheme: dark;
+  padding-right: 32px;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--faint) 50%),
+    linear-gradient(135deg, var(--faint) 50%, transparent 50%);
+  background-size: 5px 5px, 5px 5px;
+  background-position: right 17px center, right 12px center;
+  background-repeat: no-repeat;
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sp-select option { background: var(--panel); color: var(--text); }
+.sp-select option:checked { color: var(--accent); }
+
+/* The small round select a bar of pills can hold: the language picker. */
+.sp-select--pill {
+  width: auto;
+  padding: 5px 26px 5px 12px;
+  border-color: var(--line);
+  border-radius: 999px;
+  background-color: var(--panel);
+  background-position: right 13px center, right 8px center;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.sp-select--pill:hover { color: var(--text); border-color: var(--line-2); background-color: var(--panel-2); }
+
+.sp-hint {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--faint);
+}
+.sp-hint b { color: var(--dim); font-weight: 400; }
+
+/* ── Notice ─────────────────────────────────────────────────────────── */
+
+.sp-notice {
+  margin: 0;
+  padding: 11px 13px;
+  background: var(--panel-2);
+  border-left: 2px solid var(--line-2);
+  border-radius: 4px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.sp-notice[data-tone="bad"]  { background: #ff5f4514; border-left-color: var(--bad);  color: var(--bad-ink); }
+.sp-notice[data-tone="good"] { background: #5ee08a12; border-left-color: var(--good); color: var(--good-ink); }
+.sp-notice[data-tone="accent"] { background: color-mix(in srgb, var(--accent) 8%, transparent); border-left-color: var(--accent); color: var(--text); }
+
+/* ── Panel ──────────────────────────────────────────────────────────────
+   The only container. A mono title bar that says what the panel is and, at
+   its right, the one way out of it; a body; and the compositor's ring on the
+   one being pointed at, drawn inset so it never moves the grid. */
+
+.sp-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.sp-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--focus-ring);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+.sp-panel:hover::after, .sp-panel:focus-within::after { opacity: 0.85; }
+.sp-panel--still::after { display: none; }
+
+.sp-panel-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: var(--sp-bar-pad, 8px 12px);
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-family: var(--label);
+  font-size: 10px;
+  font-weight: var(--label-w);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sp-panel-bar > * { min-width: 0; }
+
+.sp-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.sp-panel-title > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+
+.sp-panel-go {
+  flex: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.sp-panel-go:hover, .sp-panel-go:focus-visible { color: var(--accent); }
+.sp-panel-go[data-external]::after { content: " \2197"; }
+
+.sp-panel-body { flex: 1; min-width: 0; min-height: 0; padding: var(--sp-panel-pad, 14px); }
+.sp-panel-body--tight { padding: 0; }
+
+/* ── Stat ───────────────────────────────────────────────────────────── */
+
+.sp-stat { display: grid; gap: 6px; min-width: 0; }
+.sp-stat-value {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--sp-stat-size, clamp(1.3rem, 1.9vw, 1.8rem));
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.sp-stat--display .sp-stat-value { font-family: var(--display); font-weight: var(--display-w); letter-spacing: var(--display-ls); }
+.sp-stat-label { margin: 0; font-family: var(--mono); font-size: 10px; line-height: 1.3; color: var(--faint); }
+
+/* ── Row ────────────────────────────────────────────────────────────────
+   One line of a list that is also a link: a date or a count in mono, the
+   title, and the row the pointer is on lifted a step. */
+
+.sp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--dim);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.sp-row > b { flex: none; font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--line-2); }
+.sp-row:hover { color: var(--text); }
+.sp-row[data-on="1"], .sp-row[aria-current] { background: var(--panel-2); color: var(--text); }
+.sp-row[data-on="1"] > b, .sp-row[aria-current] > b { color: var(--accent); }
+
+/* ── Skeleton ───────────────────────────────────────────────────────── */
+
+.sp-skeleton {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  animation: sp-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sp-pulse { 50% { opacity: 0.45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-btn, .sp-pill, .sp-seg-btn, .sp-panel::after, .sp-row, .sp-panel-go { transition: none; }
+  .sp-skeleton { animation: none; }
+}

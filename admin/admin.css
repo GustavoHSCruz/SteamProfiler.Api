@@ -5,87 +5,438 @@
    of an inbox nobody else can open is dead weight in that file, and the
    comments in it describe a machine the public site should not be describing.
 
-   It builds on style.css and extras.css, which the panel loads first, and uses
-   their tokens and primitives. */
+   It builds on style.css, extras.css and ui.css - the design system, which the
+   panel loads before this file - and uses their tokens and primitives.
 
-/* ── Admin ────────────────────────────────────────────────────────── */
+   ── What this file is now ────────────────────────────────────────────
+   The panel used to be a document: a headline, a row of tabs, and one column
+   of cards under it, laid out on the public site's 1180px reading measure. It
+   read like the feedback page with more buttons, which is what it grew out of.
 
-.gate { max-width: 420px; }
-.counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
-.count {
-  padding: 8px 13px;
+   It is not a document. It is the one screen that is open while something is
+   wrong, and the things it has to answer - what arrived, what is being shut
+   out, what the collector is seeing, what is still a draft - are things you
+   read at once and act on in place. So it is a console: a rail that never
+   moves, one workbench that swaps under it, and panels tiled across the whole
+   width of the screen instead of a column down the middle of it.
+
+   The visual is the bench's, because the bench is the site's now: the ui.css
+   palette (greys two or three steps apart, so a screen of hairlines does not
+   turn into a wireframe), the workspace grid under everything, the
+   compositor's gradient ring on the panel being pointed at. Nothing here
+   invents a second look for the room out the back. */
+
+/* ── The console's own measurements ──────────────────────────────────
+   ui.css sets the palette and the rounding. These four are the difference
+   between a page you read and a panel you work in: the site's --pad and
+   --edge are measured for prose, and at this density they are a third of the
+   screen spent on margins. */
+:root {
+  --edge: clamp(10px, 1vw, 14px);
+  --gap: 9px;
+  --pad: 17px;
+  --rail: 208px;
+  /* The bar is sticky, so anything else that sticks has to clear it. */
+  --bar: 42px;
+}
+
+/* The workspace, barely there. Forty-four pixels, the same square the panels
+   are laid on, so an empty corner still reads as part of a grid. Taken from
+   the bench, where it does the same job. */
+body {
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.022) 0 1px, transparent 1px 44px);
+  background-attachment: fixed;
+}
+
+/* Which of the two addresses this is, in the one place that is on screen no
+   matter what else is. Written as the path rather than as a word, because the
+   path is the same sentence in every language the panel speaks. */
+.wordmark::after {
+  content: "/admin";
+  color: var(--faint);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* The site's shell is a 1180px column with a lot of air over it. The panel
+   uses the screen. */
+.page {
+  max-width: none;
+  margin: 0;
+  padding: var(--gap) var(--edge) 0;
+}
+
+.foot {
+  padding: 22px var(--edge) 28px;
+  font-size: 11px;
+}
+
+/* Sign out is the one module in the status bar that is a button rather than a
+   link, and a button with no background of its own gets the browser's: a light
+   grey pill, on a dark bar, next to three modules that are outlines. */
+button.mod {
+  background: none;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+button.mod:hover { border-color: var(--line-2); color: var(--text); }
+
+/* Controls sized for a console rather than for a landing page: the site's
+   buttons are 12px by 22px because there they are the one thing to do on the
+   screen, and here there are six of them on a card. */
+.form-foot .btn { padding: 9px 16px; font-size: 13px; }
+
+/* ── The gate ─────────────────────────────────────────────────────────
+   The one screen here that is not a console, and it should not pretend to be:
+   there is exactly one thing to do on it. A single column, held in the middle
+   of the workspace, at the width of the form it contains. */
+.gate-wrap {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - var(--bar) - 150px);
+  padding: 20px 0;
+}
+.gate-col { width: 100%; max-width: 420px; }
+.gate { margin-top: 18px; }
+#gate .eyebrow, #change .eyebrow { margin-bottom: 10px; }
+#gate .display, #change .display {
+  margin: 0;
+  font-size: clamp(1.7rem, 3.4vw, 2.4rem);
+}
+
+/* ── The console ──────────────────────────────────────────────────────
+   Two columns that do not move: the rail is the panel's map and the bench is
+   whatever is being worked on. The rail sticks under the status bar rather
+   than scrolling away with the content, which is the whole reason it is a
+   column and not a row of tabs - the census view is four panels tall, and the
+   map used to be at the top of it. */
+.console {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.rail {
+  position: sticky;
+  top: calc(var(--bar) + var(--gap));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
   background: var(--panel);
   border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+/* ── The rail's rows ──────────────────────────────────────────────────
+   One row per view, each carrying its own badge. A row is a place, so it gets
+   a filled surface and a marker on its edge when it is the one you are in -
+   not an underline, which is what a tab in a strip gets and which reads as
+   "the current one of several" rather than "you are here". */
+.rail .tabs {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  border-bottom: 0;
+}
+.rail .tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--dim);
+  font-family: var(--label);
+  font-size: 11px;
+  font-weight: var(--label-w);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.rail .tab:hover { background: var(--panel-2); color: var(--text); }
+.rail .tab[data-on] {
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The badge. A number that is not there is not a zero: an empty badge draws
+   nothing at all rather than a "0" that has to be read before it can be
+   dismissed. */
+.rail .tab b {
+  flex: none;
+  min-width: 20px;
+  padding: 2px 6px;
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--faint);
+}
+.rail .tab b:empty { display: none; }
+.rail .tab[data-on] b { background: var(--accent); color: var(--on-accent); }
+.rail .tab:not([data-on]) b { background: var(--panel-2); color: var(--dim); }
+
+/* ── Ao vivo ──────────────────────────────────────────────────────────
+   No pé da coluna e não em cima do conteúdo que ela atualiza: é um controle
+   que se usa uma vez e um rótulo que se lê de canto de olho. A idade do que
+   está na tela vale pro painel inteiro, então mora no lugar que também vale. */
+.live {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 10px 11px 4px;
+  border-top: 1px solid var(--line);
+}
+.live-flag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: pointer;
+}
+.live-flag input { accent-color: var(--accent); }
+.live .form-note { margin: 0; line-height: 1.5; }
+/* Pisca uma vez a cada leitura, e só. Uma bolinha que pulsa sem parar é uma
+   bolinha que some da vista em dois minutos. */
+.live[data-reading] .form-note { color: var(--accent); }
+
+/* ── The bench ────────────────────────────────────────────────────────
+   Whatever the rail is pointing at. Panels tiled with the gap doing the
+   dividing, laid against the full width rather than a reading measure. */
+.work { min-width: 0; }
+
+.work-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 2px 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.work-head .eyebrow { margin: 0; }
+#inbox .display {
+  margin: 0;
+  font-size: clamp(1.25rem, 1.9vw, 1.75rem);
+}
+
+.bench {
+  display: grid;
+  gap: var(--gap);
+  align-content: start;
+  padding-bottom: 24px;
+}
+
+/* ── The counts, as a row of figures ──────────────────────────────────
+   They were pills: a label and a number at the same size, in a line, which is
+   the shape of a footnote. They are the first thing read on three of the five
+   views, so they are drawn as figures - the number at a size you take in
+   without reading, the label under it saying which number it is.
+
+   The order in the markup is label then number, and it stays that way: these
+   are built by admin.js and the reading order in the source is the one a
+   screen reader gets. column-reverse turns them over for the eye only. */
+/* auto-fill and not auto-fit: the blog view has two figures and the feedback
+   view has seven, and auto-fit would stretch those two across the whole
+   screen. The empty tracks are the point - a figure is the same size on every
+   view, and how much of the row it fills is itself the reading. */
+.counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--gap);
+  margin: 0;
+}
+.count {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-family: var(--label);
+  font-size: 9.5px;
+  font-weight: var(--label-w);
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
   color: var(--dim);
 }
-.count b { color: var(--text); font-weight: 600; }
+.count b {
+  font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+/* The one count that is a warning rather than a measurement. */
+.count[data-warn] b { color: var(--bad); }
+/* Inside a panel the figures sit on the panel, so they take the next surface
+   up rather than drawing a second box in the same colour. */
+.panel-body .counts { margin: 4px 0 16px; }
+.panel-body .count { background: var(--panel-2); }
 
-.triage { display: grid; gap: var(--gap); margin-top: 20px; }
-.item { padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-.item[data-status="novo"] { border-left: 3px solid var(--accent); }
+/* ── Cards ────────────────────────────────────────────────────────────
+   A message, an address, a visit, a post: four things, one shape. Each is a
+   panel in its own right, so each gets what a panel gets - the surface, the
+   hairline, the title bar, and the compositor's ring while it is pointed at.
+   They were flat boxes with a padded top, and on a screen of forty of them
+   there was nothing to say where one ended. */
+.triage {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+/* Two columns when there is room for two, three when there is room for three.
+   Only for the lists that are cards; the security visits carry a whole table
+   inside them and stay one to a row, and the blog list is already in a column
+   of its own. */
+@media (min-width: 1280px) {
+  .bench > .triage:not(.triage--wide) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1840px) {
+  .bench > .triage:not(.triage--wide) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* A column, so that the strip of buttons can be told to sit at the foot. Two
+   cards side by side are two of the same thing, and their tools lining up is
+   what says so - ragged ones read as two different kinds of card. */
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--pad);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+/* The gap owns the spacing inside a card, so the paragraphs stop carrying
+   their own: two sources of the same measurement is how a card ends up with
+   twenty-two pixels under its title and ten under everything else. */
+.item > .card-body, .item > .card-meta, .item > .paths { margin: 0; }
+
+/* The gradient border the compositor puts on the window under the pointer,
+   drawn as an inset ring so it never changes the box size and never shifts
+   the grid. The same rule .panel carries in style.css, given to the cards
+   because on this screen the cards are the panels. */
+.item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--focus-ring);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.item:hover::after, .item:focus-within::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .item::after { transition: none; } }
+
+/* Unread. A mark laid over the card rather than a border on it, for two
+   reasons: a border on one card in a grid makes that card a pixel taller than
+   its neighbours, and an inset shadow is painted under its own children - the
+   title bar has a background of its own, so the top third of the mark
+   disappeared behind it. */
+.item[data-status="novo"]::before,
+.sec-visit[data-error="1"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  z-index: 1;
+  background: var(--accent);
+  pointer-events: none;
+}
+.sec-visit[data-error="1"]::before { background: var(--bad); }
+
+/* The head is the card's title bar: it runs the full width, on its own
+   surface, with the tags in it. */
+.item > .card-head {
+  margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 0;
+  padding: 11px var(--pad);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.item > .card-head .card-title {
+  font-size: 14.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.card-body { font-size: 13px; }
+.card-meta { font-size: 10.5px; line-height: 1.6; }
+
+/* The tools are the card's foot, on the same footing as the head: one strip,
+   bordered off, holding everything that acts on this card. */
+/* auto on top, so the strip falls to the foot of whatever height the row gave
+   the card. */
+.item > .item-tools {
+  margin: auto calc(var(--pad) * -1) calc(var(--pad) * -1);
+  padding: 11px var(--pad);
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
 .item-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
 }
-.item-tools .select { width: auto; min-width: 130px; }
-.item-tools .input { flex: 1; min-width: 200px; }
+.item-tools .select { width: auto; min-width: 128px; }
+.item-tools .input { flex: 1; min-width: 180px; }
+.item-tools .btn { padding: 8px 14px; font-size: 12.5px; }
+.item-tools .form-note { flex-basis: 100%; margin: 0; }
 .item-contact {
   font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--link);
-  word-break: break-all;
-}
-
-/* The same headline size the utility pages use, because the panel is one. */
-#inbox .display, #gate .display {
-  font-size: clamp(1.9rem, 4.4vw, 3.3rem);
-  margin-bottom: 6px;
-}
-
-/* ── The admin panel, second half ────────────────────────────────────
-   Two views instead of one list, and a card per address instead of a card
-   per row. Only loaded by the admin service; public pages never request it. */
-
-.tabs {
-  display: flex;
-  gap: 6px;
-  margin: 18px 0 20px;
-  border-bottom: 1px solid var(--line);
-}
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 10px 14px;
-  cursor: pointer;
-  color: var(--dim);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.tab:hover { color: var(--text); }
-.tab[data-on] { color: var(--text); border-bottom-color: var(--accent); }
-.tab b {
-  font-weight: 600;
   font-size: 11px;
-  color: var(--faint);
+  color: var(--link);
+  overflow-wrap: anywhere;
 }
-.tab[data-on] b { color: var(--accent); }
 
-.count[data-warn] b { color: #ff7b84; }
+/* Smaller controls inside a card than the ones a form gets: a card is a row in
+   a list of forty and its buttons are not the reason the screen is open. */
+.btn--small { padding: 6px 9px; font-size: 11px; }
+
+/* ── Tags ─────────────────────────────────────────────────────────────
+   Retuned for the card's title bar: mono, small, and the same height as each
+   other so a head with four of them is still one line. */
+.tag {
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
 
 /* A repeat gets a visible edge. It is the one row on the page where reading
    carefully matters and the one easiest to scroll past. */
@@ -105,14 +456,14 @@
   border-radius: 6px;
   background: var(--panel-2);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--dim);
   word-break: break-all;
 }
 .path-more {
   align-self: center;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
@@ -136,21 +487,94 @@
 .appeal[data-status="novo"] { border-left: 2px solid var(--accent); padding-left: 12px; margin-left: -16px; }
 .appeal .unread { color: var(--accent); font-weight: 600; }
 .appeal .card-body { margin-top: 6px; }
+.appeal .item-tools { margin-top: 10px; }
 
-/* ── The editor, which only the admin service loads ────────────────── */
+/* ── The editor, which only the admin service loads ──────────────────
+   On a wide screen the post being written and the list it came from stand
+   side by side: picking the next one to fix is a glance to the right, not a
+   scroll past nine hundred pixels of textarea. The list keeps its own
+   scroll so that the editor, which is the taller of the two, does not drag
+   it off the screen. */
+.blog-grid {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1300px) {
+  .blog-grid { grid-template-columns: minmax(0, 1fr) minmax(290px, 27%); }
+  .blog-side {
+    position: sticky;
+    top: calc(var(--bar) + var(--gap));
+    max-height: calc(100vh - var(--bar) - var(--gap) * 2);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+}
+.blog-side { display: grid; gap: var(--gap); align-content: start; }
+.blog-editor { margin: 0; }
 
-.blog-editor { margin-top: 20px; }
 .editor-row {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
-.editor-row .field { margin-bottom: 0; }
+/* Each cell is a column with its control at the foot, so a label that wraps to
+   two lines does not push its own input half a line below the four beside it.
+   The security filter has one label that wraps at every width there is. */
+.editor-row .field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+.editor-row .field > :last-child { margin-top: auto; }
 .editor-row .select { width: 100%; }
+/* The field whose control is a button. Its label is a label like the others,
+   so the button has to sit where the others' inputs sit. */
+.editor-row .field > .btn { width: 100%; }
 
-.tabs--sub { margin: 20px 0 16px; }
-.lang-mark { color: var(--accent); font-size: 9px; }
-.textarea--tall { min-height: 340px; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+/* ── The language tabs ────────────────────────────────────────────────
+   A segmented control and not a tab strip. Five of them, each one a whole
+   post, and they are a choice of which text you are looking at rather than a
+   route: the segmented shape says the five are alternatives to each other,
+   which is exactly what they are. */
+.tabs--sub {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 20px 0 16px;
+  padding: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.tabs--sub .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.tabs--sub .tab:hover { color: var(--text); }
+.tabs--sub .tab[data-on] { background: var(--accent); color: var(--on-accent); }
+.lang-mark { color: var(--accent); font-size: 8px; }
+.tabs--sub .tab[data-on] .lang-mark { color: var(--on-accent); }
+
+.textarea--tall {
+  min-height: 360px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+}
 
 /* The translator sits above the fields it fills, so the button and the text
    it is about to overwrite are in the same glance. */
@@ -167,17 +591,214 @@
 .tr-flag input { accent-color: var(--accent); }
 .tr-bar .form-note { margin: 0; }
 
+/* ── Security ─────────────────────────────────────────────────────────
+   The filter and the state of the collection, side by side and not stacked:
+   one is operated on every visit to this view and the other is read on the
+   way past, and stacking them put three paragraphs of retention policy
+   between the controls and the list they control. */
+.sec-head {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1240px) {
+  .sec-head { grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); }
+}
+.sec-state .card-body { margin-top: 12px; }
+
+/* Is anything arriving. Three sentences are possible here and one of them is
+   "the collector is off", which changes what an empty list below means. */
+.lamp { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--dim); }
+.lamp::before {
+  content: "";
+  flex: none;
+  width: 6px; height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--good);
+}
+
+/* The controls that destroy something, fenced off from the ones that do not.
+   The reset here clears a week of evidence and it used to sit four lines
+   above the filter's own submit button. */
+.danger-zone {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.danger-zone .form-foot { margin-top: 0; }
+.danger-zone > .form-note { margin-top: 10px; }
+
+/* A visit carries a table inside it, so it gets a whole row to itself until
+   there is room for two of them side by side. */
+/* start, unlike the card lists above: a visit's height is how much it did, and
+   a quiet one stretched to match a scanner's is a lot of empty panel. */
+.triage--wide {
+  /* 720 and not 620: a visit opens into a table with a 680px minimum, and a
+     column narrower than that turns every opened visit into a sideways
+     scroll. Two of these only when two of them fit whole. */
+  grid-template-columns: repeat(auto-fill, minmax(720px, 1fr));
+  align-items: start;
+}
+
+.sec-visit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 0;
+  padding: 12px var(--pad);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.sec-screen-uri { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+/* Same rule as the cards above: the card's gap owns the spacing, the children
+   do not carry a second copy of it. */
+.sec-visit > p, .sec-visit > div { margin: 0; }
+.sec-visit-meta { font-size: 11px; color: var(--dim); }
+.sec-visit-meta code, .sec-origin code { color: var(--text); font-size: 11px; }
+.sec-country-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+.sec-block-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sec-block-tools .form-note { margin: 0; }
+
+/* The six numbers a visit is. Mono and tabular so that two visits read as two
+   rows of the same measurement rather than two sentences. */
+.sec-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.sec-metrics span {
+  white-space: nowrap;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.sec-error-count, .sec-signals { color: var(--accent); }
+.sec-metrics .sec-error-count { border-color: var(--accent-d); }
+.sec-signals { font-size: 11.5px; line-height: 1.6; margin: 12px 0 0; }
+.sec-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.sec-status[data-error="1"] { color: var(--accent); border-color: var(--accent); }
+.sec-details { border-top: 1px solid var(--line); padding-top: 12px; }
+.sec-details summary, .sec-orphans > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+.sec-details summary:hover, .sec-orphans > summary:hover { color: var(--text); }
+.sec-origin { font-size: 11.5px; color: var(--dim); overflow-wrap: anywhere; margin: 10px 0; }
+
+/* ── The request table ────────────────────────────────────────────────
+   The one place in the panel where rows are read against each other rather
+   than one at a time, so it is built like a table and not like a list: the
+   head stays while the body scrolls, every column that is a measurement is
+   mono and tabular, and the row under the pointer lights up because forty
+   rows of hairlines is a place to lose your line in. */
+.sec-table-wrap {
+  overflow: auto;
+  max-height: 420px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sec-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  text-align: left;
+}
+.sec-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-2);
+  color: var(--dim);
+  font-family: var(--label);
+  font-weight: var(--label-w);
+  font-size: 9.5px;
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sec-table th, .sec-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sec-table tbody tr:last-child td { border-bottom: 0; }
+.sec-table tbody tr:hover td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.sec-table td:nth-child(4) { width: 100%; min-width: 160px; }
+.sec-table td:not(:nth-child(4)) { white-space: nowrap; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.sec-table td:first-child { color: var(--dim); }
+.sec-table tr[data-error="1"] td:first-child { color: var(--accent); }
+.sec-request-uri { display: block; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 11.5px; }
+.sec-request-signals { display: block; font-size: 10.5px; color: var(--accent); margin-top: 5px; }
+.sec-orphans { margin-top: 4px; }
+.sec-orphans > summary { padding: 14px var(--pad); }
+
+/* ── The count ────────────────────────────────────────────────────────
+   Five panels, tiled against the twelve columns rather than stacked: the
+   visitor half and the screen half are read against each other, and a scroll
+   between them is a comparison nobody makes. */
+/* start, not stretch: these five are lists of counts and their lengths have
+   nothing to do with each other. Stretched, the short one in a row grows a
+   third of a screen of empty panel to match the long one beside it, which is
+   a lot of drawn box to say nothing. */
+.bench--census {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+}
+.c-warn { grid-column: span 12; }
+.c-who { grid-column: span 12; }
+.c-screens { grid-column: span 12; }
+.c-what { grid-column: span 12; }
+.c-hist { grid-column: span 12; }
+@media (min-width: 1200px) {
+  .c-who { grid-column: span 5; }
+  .c-screens { grid-column: span 7; }
+  .c-what { grid-column: span 6; }
+  .c-hist { grid-column: span 6; }
+}
+
 /* ── The experimental marking ──────────────────────────────────────────
    One colour, reserved, and it deliberately is not --accent.
 
    --accent is #ffb454, warm amber, and it is the site's primary: the active
-   tab, the focus ring, an unread appeal, the dot in the wordmark. A yellow
-   badge in that hue would read as "this is highlighted", which is the opposite
-   of what it has to say. So --exp is a colder, sourer yellow that appears
-   nowhere else on either page, and what separates it from the accent is not
-   only the hue but the treatment: hatched rather than solid. A stripe pattern
-   is not something this interface does anywhere, so it cannot be mistaken for
-   ordinary emphasis even at a glance.
+   row in the rail, the focus ring, an unread appeal, the dot in the wordmark.
+   A yellow badge in that hue would read as "this is highlighted", which is the
+   opposite of what it has to say. So --exp is a colder, sourer yellow that
+   appears nowhere else on either page, and what separates it from the accent is
+   not only the hue but the treatment: hatched rather than solid. A stripe
+   pattern is not something this interface does anywhere, so it cannot be
+   mistaken for ordinary emphasis even at a glance.
 
    The marking goes on the section, not on each figure. Everything in the census
    view is new, so a badge per number would be a wall of yellow inside a week
@@ -188,17 +809,17 @@
   --exp-d: #8f8420;
 }
 
-/* The tab, so the warning is visible before the view is opened. */
-.tab[data-exp] b.exp-dot { color: var(--exp); font-size: 9px; }
-.tab[data-exp][data-on] { border-bottom-color: var(--exp); }
-.tab[data-exp][data-on] b.exp-dot { color: var(--exp); }
+/* The row in the rail, so the warning is visible before the view is opened. */
+.rail .tab[data-exp] b.exp-dot { background: none; color: var(--exp); font-size: 9px; padding: 0; }
+.rail .tab[data-exp][data-on] { box-shadow: inset 2px 0 0 var(--exp); }
+.rail .tab[data-exp][data-on] b.exp-dot { background: none; color: var(--exp); }
 
 /* The zone. Left edge plus a wash, which is what makes it a place rather than
    a highlight - accents in this interface are always small and inline. */
 .panel[data-exp] {
   border-left: 3px solid var(--exp);
   background:
-    linear-gradient(0deg, rgba(227, 213, 74, 0.04), rgba(227, 213, 74, 0.04)),
+    linear-gradient(0deg, rgba(227, 213, 74, 0.045), rgba(227, 213, 74, 0.045)),
     var(--panel);
 }
 .panel[data-exp] .panel-bar { border-bottom-color: var(--exp-d); }
@@ -225,18 +846,19 @@
    it: a label, a proportional bar, a number. Deliberately not a chart - a
    count of forty things does not need axes, and a chart would make an
    experimental number look more settled than it is. */
-.bars { display: grid; gap: 6px; margin: 10px 0 16px; }
+.bars { display: grid; gap: 5px; margin: 10px 0 16px; }
 .bar-row {
   display: grid;
   grid-template-columns: minmax(90px, 26%) 1fr auto;
   align-items: center;
   gap: 10px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 .bar-row > span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-row > b { color: var(--text); font-weight: 600; }
-.bar-track { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.bar-track { height: 7px; background: var(--line); border-radius: 999px; overflow: hidden; }
 .bar-fill { height: 100%; background: var(--exp-d); border-radius: 999px; }
 /* The confidence of a label, which is the one thing in here worth colouring
    differently: a guess and a declaration should not look alike. */
@@ -270,22 +892,39 @@
   margin-bottom: 2px;
 }
 .fam-head .card-meta { margin: 0; }
-.fam-head b { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.fam-head b { font-family: var(--mono); font-size: 11.5px; color: var(--text); }
 
-/* ── Ao vivo ──────────────────────────────────────────────────────────
-   Debaixo das abas e acima de tudo o que ela atualiza, do tamanho de uma
-   nota de rodapé: é um controle que se usa uma vez e um rótulo que se lê de
-   canto de olho. */
-.live {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin: -6px 0 18px;
+/* ── Narrow ───────────────────────────────────────────────────────────
+   The rail becomes a strip. It keeps the badges and the order, loses the
+   sticky column it has no width for, and the live readout goes back to being
+   a line under it. This is a panel opened on a phone to see what arrived, not
+   a phone port of a console: everything still works, nothing pretends the
+   screen is wider than it is. */
+@media (max-width: 1000px) {
+  .console { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    position: static;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+  }
+  .rail .tabs {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(120px, 1fr);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .rail .tabs::-webkit-scrollbar { display: none; }
+  .rail .tab { justify-content: flex-start; padding: 10px 12px; }
+  .live {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 6px 2px;
+  }
 }
-.live-flag { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
-.live-flag input { accent-color: var(--accent); }
-.live .form-note { margin: 0; }
-/* Pisca uma vez a cada leitura, e só. Uma bolinha que pulsa sem parar é uma
-   bolinha que some da vista em dois minutos. */
-.live[data-reading] .form-note { color: var(--accent); }
+@media (max-width: 600px) {
+  .sec-visit-head { flex-direction: column; gap: 8px; }
+  .sec-screen-uri { font-size: 13px; }
+  .item-tools .input { min-width: 100%; }
+}

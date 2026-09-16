@@ -9,6 +9,19 @@
 <link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/extras.css">
+<!-- SteamProfiler.UI, the design system, after the two files it retunes. The
+     token names are the same ones style.css has always used - --panel, --line,
+     --accent - so loading it here moves the panel onto the bench's palette and
+     its rounding without a single class changing. The site does not load this
+     yet; the panel is its first reader on the static side, which is the right
+     way round: the room nobody else walks into is where a new floor gets
+     tested.
+
+     This copy is written by `npm run sync` in the SteamProfiler.UI repo and
+     lives beside this file, not in the site directory: it is served out of
+     ROOT, so the panel keeps working whatever the front happens to ship. Edit
+     it there and sync, never here. -->
+<link rel="stylesheet" href="/ui.css">
 <!-- The panel's own half, which the public site does not carry. Last, because
      it builds on the three above. -->
 <link rel="stylesheet" href="/admin.css">
@@ -27,304 +40,435 @@
 
 <main class="page">
   <!-- ── The gate ──────────────────────────────────────────────────── -->
-  <section id="gate">
-    <p class="eyebrow" data-i18n="adm.eyebrow"></p>
-    <h1 class="display" data-i18n="adm.h1"></h1>
-    <article class="panel gate">
-      <div class="panel-bar"><span data-i18n="adm.sign_in"></span></div>
-      <div class="panel-body">
-        <form id="gate-form">
-          <div class="field">
-            <label for="user" data-i18n="adm.user"></label>
-            <input class="input" id="user" type="text" autocomplete="username">
-          </div>
-          <div class="field">
-            <label for="password" data-i18n="adm.password"></label>
-            <input class="input" id="password" type="password" autocomplete="current-password">
-          </div>
-          <div class="form-foot">
-            <button class="btn" type="submit" data-i18n="adm.enter"></button>
-          </div>
-          <div class="notice" id="gate-error" hidden data-tone="bad"></div>
-        </form>
-        <p class="form-note" data-i18n-html="adm.gate_note"></p>
-      </div>
-    </article>
+  <section id="gate" class="gate-wrap">
+    <div class="gate-col">
+      <p class="eyebrow" data-i18n="adm.eyebrow"></p>
+      <h1 class="display" data-i18n="adm.h1"></h1>
+      <article class="panel gate">
+        <div class="panel-bar"><span data-i18n="adm.sign_in"></span></div>
+        <div class="panel-body">
+          <form id="gate-form">
+            <div class="field">
+              <label for="user" data-i18n="adm.user"></label>
+              <input class="input" id="user" type="text" autocomplete="username">
+            </div>
+            <div class="field">
+              <label for="password" data-i18n="adm.password"></label>
+              <input class="input" id="password" type="password" autocomplete="current-password">
+            </div>
+            <div class="form-foot">
+              <button class="btn" type="submit" data-i18n="adm.enter"></button>
+            </div>
+            <div class="notice" id="gate-error" hidden data-tone="bad"></div>
+          </form>
+          <p class="form-note" data-i18n-html="adm.gate_note"></p>
+        </div>
+      </article>
+    </div>
   </section>
 
   <!-- ── Forced on the first login, and after any reset ─────────────── -->
-  <section id="change" hidden>
-    <p class="eyebrow" data-i18n="adm.eyebrow"></p>
-    <h1 class="display" data-i18n="adm.change_h1"></h1>
-    <article class="panel gate">
-      <div class="panel-bar"><span data-i18n="adm.change_bar"></span><b>scrypt</b></div>
-      <div class="panel-body">
-        <form id="change-form">
-          <div class="field">
-            <label for="cur-pass" data-i18n="adm.current"></label>
-            <input class="input" id="cur-pass" type="password" autocomplete="current-password">
-          </div>
-          <div class="field">
-            <label for="new-pass" data-i18n="adm.new"></label>
-            <input class="input" id="new-pass" type="password" autocomplete="new-password">
-          </div>
-          <div class="form-foot">
-            <button class="btn" type="submit" data-i18n="adm.save_pass"></button>
-          </div>
-          <div class="notice" id="change-error" hidden data-tone="bad"></div>
-        </form>
-        <p class="form-note" data-i18n="adm.change_note"></p>
-      </div>
-    </article>
+  <section id="change" class="gate-wrap" hidden>
+    <div class="gate-col">
+      <p class="eyebrow" data-i18n="adm.eyebrow"></p>
+      <h1 class="display" data-i18n="adm.change_h1"></h1>
+      <article class="panel gate">
+        <div class="panel-bar"><span data-i18n="adm.change_bar"></span><b>scrypt</b></div>
+        <div class="panel-body">
+          <form id="change-form">
+            <div class="field">
+              <label for="cur-pass" data-i18n="adm.current"></label>
+              <input class="input" id="cur-pass" type="password" autocomplete="current-password">
+            </div>
+            <div class="field">
+              <label for="new-pass" data-i18n="adm.new"></label>
+              <input class="input" id="new-pass" type="password" autocomplete="new-password">
+            </div>
+            <div class="form-foot">
+              <button class="btn" type="submit" data-i18n="adm.save_pass"></button>
+            </div>
+            <div class="notice" id="change-error" hidden data-tone="bad"></div>
+          </form>
+          <p class="form-note" data-i18n="adm.change_note"></p>
+        </div>
+      </article>
+    </div>
   </section>
 
   <!-- ── Signed in ─────────────────────────────────────────────────
-       Two views, not one list. Feedback is triaged: read it, set a status,
-       answer it. A block is a decision about an address, and everything
-       needed to make it - what was tried, how often, whether this one has
-       been let back in before, and everything they have written - belongs
-       on one card. They were three separate cards and none of them could be
-       acted on without the other two. -->
-  <section id="inbox" hidden>
-    <p class="eyebrow" data-i18n="adm.h1"></p>
-    <h1 class="display" id="inbox-title">-</h1>
+       A console and not a page: a rail that is always there on the left, one
+       workbench on the right, and the five views swap inside the bench
+       without the chrome around them moving. The five used to be a row of
+       tabs above the content, which meant the panel's own map was a thing you
+       scrolled back up to read - on the census view, four panels up.
 
-    <nav class="tabs" id="tabs">
-      <button class="tab" type="button" id="tab-mail" data-view="mail" data-on="1">
-        <span data-i18n="adm.tab_mail"></span><b id="badge-mail"></b>
-      </button>
-      <button class="tab" type="button" id="tab-block" data-view="block">
-        <span data-i18n="adm.tab_block"></span><b id="badge-block"></b>
-      </button>
-      <button class="tab" type="button" id="tab-blog" data-view="blog">
-        <span data-i18n="adm.tab_blog"></span><b id="badge-blog"></b>
-      </button>
-      <!-- The one tab whose badge is a warning rather than a number. `data-exp`
-           is what admin.css hangs the experimental colour off, and it is on the
-           tab as well as on the panels so the marking is visible before the
-           view is even opened. -->
-      <button class="tab" type="button" id="tab-census" data-view="census" data-exp="1">
-        <span data-i18n="adm.tab_census"></span><b class="exp-dot">●</b>
-      </button>
-    </nav>
+       The rail carries the badges, so what has arrived in a view you are not
+       looking at is legible from wherever you are, and it carries the live
+       readout at its foot, because that one line is about the whole panel and
+       not about whichever view is open.
 
-    <!-- ── Ao vivo ─────────────────────────────────────────────────
-         Uma linha, embaixo das abas, porque vale pro painel inteiro e não
-         pra uma aba só. O rótulo diz a idade do que está na tela em vez de
-         dizer "ao vivo" e pronto: a única coisa pior que um número velho é um
-         número velho com cara de novo. Quando a leitura automática está
-         segurando - porque tem coisa escrita e não salva - ele diz isso
-         também, senão a pausa parece travamento. -->
-    <div class="live" id="live-bar">
-      <label class="live-flag">
-        <input type="checkbox" id="live" checked>
-        <span data-i18n="adm.live"></span>
-      </label>
-      <span class="form-note" id="live-note"></span>
-    </div>
+       Two views, not one list, is still the rule inside the bench. Feedback is
+       triaged: read it, set a status, answer it. A block is a decision about an
+       address, and everything needed to make it - what was tried, how often,
+       whether this one has been let back in before, and everything they have
+       written - belongs on one card. -->
+  <section id="inbox" class="console" hidden>
+    <aside class="rail">
+      <nav class="tabs" id="tabs">
+        <button class="tab" type="button" id="tab-mail" data-view="mail" data-on="1">
+          <span data-i18n="adm.tab_mail"></span><b id="badge-mail"></b>
+        </button>
+        <button class="tab" type="button" id="tab-block" data-view="block">
+          <span data-i18n="adm.tab_block"></span><b id="badge-block"></b>
+        </button>
+        <button class="tab" type="button" id="tab-security" data-view="security">
+          <span data-i18n="adm.sec_tab"></span><b id="badge-security"></b>
+        </button>
+        <button class="tab" type="button" id="tab-blog" data-view="blog">
+          <span data-i18n="adm.tab_blog"></span><b id="badge-blog"></b>
+        </button>
+        <!-- The one tab whose badge is a warning rather than a number. `data-exp`
+             is what admin.css hangs the experimental colour off, and it is on the
+             tab as well as on the panels so the marking is visible before the
+             view is even opened. -->
+        <button class="tab" type="button" id="tab-census" data-view="census" data-exp="1">
+          <span data-i18n="adm.tab_census"></span><b class="exp-dot">●</b>
+        </button>
+      </nav>
 
-    <!-- Feedback -->
-    <div id="view-mail">
-      <div class="counts" id="counts"></div>
-      <div class="triage" id="triage"></div>
-      <p class="empty" id="inbox-empty" hidden data-i18n="adm.empty"></p>
-    </div>
+      <!-- ── Ao vivo ─────────────────────────────────────────────────
+           No pé da coluna, porque vale pro painel inteiro e não pra uma aba
+           só. O rótulo diz a idade do que está na tela em vez de dizer "ao
+           vivo" e pronto: a única coisa pior que um número velho é um número
+           velho com cara de novo. Quando a leitura automática está segurando -
+           porque tem coisa escrita e não salva - ele diz isso também, senão a
+           pausa parece travamento. -->
+      <div class="live" id="live-bar">
+        <label class="live-flag">
+          <input type="checkbox" id="live" checked>
+          <span data-i18n="adm.live"></span>
+        </label>
+        <span class="form-note" id="live-note"></span>
+      </div>
+    </aside>
 
-    <!-- Blocked addresses, one card each -->
-    <div id="view-block" hidden>
-      <div class="counts" id="block-counts"></div>
-      <div class="triage" id="blocks"></div>
-      <p class="empty" id="blocks-empty" hidden data-i18n="adm.blocks_none"></p>
-    </div>
+    <div class="work">
+      <div class="work-head">
+        <p class="eyebrow" data-i18n="adm.h1"></p>
+        <h1 class="display" id="inbox-title">-</h1>
+      </div>
 
-    <!-- ── The blog ────────────────────────────────────────────────
-         The only place a post can be written. The list and the editor are
-         one view rather than two screens: opening a post fills the form
-         above the list it was picked from, so what is being edited and
-         what else exists are never a navigation apart. -->
-    <div id="view-blog" hidden>
-      <div class="counts" id="blog-counts"></div>
+      <!-- Feedback -->
+      <div id="view-mail" class="bench">
+        <div class="counts" id="counts"></div>
+        <div class="triage" id="triage"></div>
+        <p class="empty" id="inbox-empty" hidden data-i18n="adm.empty"></p>
+      </div>
 
-      <article class="panel blog-editor">
-        <div class="panel-bar">
-          <span id="editor-bar" data-i18n="adm.blog_new"></span><b id="editor-slug">-</b>
-        </div>
-        <div class="panel-body">
-          <form id="blog-form">
-            <div class="editor-row">
-              <div class="field">
-                <label for="b-slug" data-i18n="adm.blog_slug"></label>
-                <input class="input" id="b-slug" type="text" maxlength="80"
-                       autocomplete="off" spellcheck="false"
-                       data-i18n-ph="adm.blog_slug_ph">
-              </div>
-              <div class="field">
-                <label for="b-status" data-i18n="adm.blog_status"></label>
-                <select class="select" id="b-status">
-                  <option value="draft" data-i18n="blog.draft"></option>
-                  <option value="published" data-i18n="blog.live"></option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="b-origin" data-i18n="adm.blog_origin"></label>
-                <select class="select" id="b-origin">
-                  <option value="en">EN</option>
-                  <option value="pt">PT</option>
-                  <option value="ru">RU</option>
-                </select>
-              </div>
-              <!-- Tags used to be one field for the whole post, up here with
-                   the status and the origin. They are words a reader reads, so
-                   they moved into the language panes beside the text they are
-                   read with: a post filed under "lançamento" was showing that
-                   to somebody reading the Russian. The origin's set is still
-                   the post's, and it is what a language nobody tagged shows. -->
-              <!-- The readable end of the address, one per language, written by
-                   the model on the desk. Only a title that survives being
-                   stripped to a-z fills itself in while you type; a Russian one
-                   leaves nothing behind, and this is the button for it. -->
-              <div class="field">
-                <label for="b-slugs" data-i18n="adm.slug_lang"></label>
-                <button class="btn btn--quiet" type="button" id="b-slugs"
-                        data-i18n="adm.slug_ai"></button>
+      <!-- Blocked addresses, one card each -->
+      <div id="view-block" class="bench" hidden>
+        <div class="counts" id="block-counts"></div>
+        <div class="triage" id="blocks"></div>
+        <p class="empty" id="blocks-empty" hidden data-i18n="adm.blocks_none"></p>
+      </div>
+
+      <!-- ── Security ────────────────────────────────────────────────
+           The filter and the state of the collection are two different jobs
+           and they are two panels: one is a thing you operate every time you
+           open this view, the other is a thing you read once and mostly hope
+           not to think about. They were one panel, and the reset button - the
+           one control here that destroys a week of evidence - sat four lines
+           above the filter's own submit. -->
+      <div id="view-security" class="bench" hidden>
+        <div class="sec-head">
+          <article class="panel sec-filter-panel">
+            <div class="panel-bar"><span data-i18n="adm.sec_filter"></span><b id="sec-total">-</b></div>
+            <div class="panel-body">
+              <form id="sec-filters">
+                <div class="editor-row">
+                  <div class="field">
+                    <label for="sec-kind" data-i18n="adm.sec_kind"></label>
+                    <select class="select" id="sec-kind">
+                      <option value="" data-i18n="adm.sec_all"></option>
+                      <option value="tool" data-i18n="cen.class.tool"></option>
+                      <option value="scanner" data-i18n="cen.class.scanner"></option>
+                      <option value="ai" data-i18n="cen.class.ai"></option>
+                      <option value="search" data-i18n="cen.class.search"></option>
+                      <option value="unknown" data-i18n="cen.class.unknown"></option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="sec-status" data-i18n="adm.sec_status"></label>
+                    <select class="select" id="sec-status">
+                      <option value="" data-i18n="adm.sec_all"></option>
+                      <option value="2xx">2xx</option><option value="3xx">3xx</option>
+                      <option value="4xx">4xx</option><option value="5xx">5xx</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="sec-actor" data-i18n="adm.sec_actor"></label>
+                    <input class="input" id="sec-actor" maxlength="64" autocomplete="off">
+                  </div>
+                  <div class="field">
+                    <label for="sec-query" data-i18n="adm.sec_query"></label>
+                    <input class="input" id="sec-query" maxlength="100" autocomplete="off">
+                  </div>
+                  <div class="field">
+                    <label for="sec-hide-actor" data-i18n="adm.sec_hide"></label>
+                    <input class="input" id="sec-hide-actor" maxlength="260" autocomplete="off">
+                  </div>
+                </div>
+                <div class="form-foot">
+                  <button class="btn" type="submit" data-i18n="adm.sec_filter"></button>
+                  <button class="btn btn--quiet" type="button" id="sec-clear" data-i18n="adm.sec_clear"></button>
+                </div>
+              </form>
+              <div class="notice" id="sec-error" hidden data-tone="bad" role="alert"></div>
+            </div>
+          </article>
+
+          <article class="panel sec-state">
+            <div class="panel-bar">
+              <span data-i18n="adm.sec_tab"></span>
+            </div>
+            <div class="panel-body">
+              <!-- Whether anything is arriving at all, and it is the first line
+                   of the panel rather than a footnote under three paragraphs:
+                   an empty list means one of two entirely different things, and
+                   which one is this sentence. -->
+              <p class="form-note lamp" id="sec-collection" role="status"></p>
+              <p class="card-body" data-i18n="adm.sec_intro"></p>
+              <p class="form-note" id="sec-retention"></p>
+              <div class="danger-zone">
+                <div class="form-foot">
+                  <button class="btn btn--danger" type="button" id="sec-reset" data-i18n="adm.sec_reset"></button>
+                  <span class="form-note" id="sec-reset-note" role="status"></span>
+                </div>
+                <p class="form-note" data-i18n="adm.sec_reset_help"></p>
               </div>
             </div>
-
-            <!-- One tab per language, and each holds a whole post. A language
-                 left empty is a translation that does not exist yet, not an
-                 error: the site falls back to the original and says so. -->
-            <!-- Filled by admin.js from BLOG_LANGS, the same list the panes
-                 below are built from. They used to be written here by hand,
-                 three of them, and when the list grew to five the script
-                 looked for mark-zh-cn, found nothing, threw, and took the
-                 whole panel down with it - login included. -->
-            <nav class="tabs tabs--sub" id="lang-tabs"></nav>
-
-            <div id="lang-panes"></div>
-
-            <div class="form-foot">
-              <button class="btn" type="submit" id="b-save" data-i18n="adm.blog_save"></button>
-              <button class="btn btn--quiet" type="button" id="b-new" data-i18n="adm.blog_clear"></button>
-              <a class="btn btn--quiet" id="b-open" hidden target="_blank" rel="noopener"
-                 data-i18n="adm.blog_open"></a>
-              <span class="form-note" id="b-slugs-note"></span>
-              <span class="form-note" id="b-note"></span>
-            </div>
-            <div class="notice" id="b-error" hidden data-tone="bad"></div>
-          </form>
-
-          <p class="form-note" data-i18n-html="adm.blog_help"></p>
+          </article>
         </div>
-      </article>
 
-      <div class="triage" id="blog-list"></div>
-      <p class="empty" id="blog-empty" hidden data-i18n="adm.blog_none"></p>
-    </div>
-
-    <!-- ── The count ───────────────────────────────────────────────
-         Two halves that do not meet, and the layout says so: the visitor
-         side and the profile side are separate panels with nothing drawn
-         between them, because there is nothing between them.
-
-         Everything in here carries data-exp. The whole section is new, so
-         marking each number individually would make the colour wallpaper
-         inside a week and stop being read - the section is marked once,
-         loudly, and the figures are left plain. If a number that is NOT an
-         experiment ever lands in here, it will be the odd one out, which is
-         the distinction being worth something again. -->
-    <div id="view-census" hidden>
-      <article class="panel" data-exp="1">
-        <div class="panel-bar">
-          <span data-i18n="adm.cen_bar"></span>
-          <b class="exp-badge" data-i18n="adm.cen_exp"></b>
+        <div class="triage triage--wide" id="sec-requests"></div>
+        <p class="empty" id="sec-empty" hidden data-i18n="adm.sec_empty"></p>
+        <div class="form-foot">
+          <button class="btn btn--quiet" type="button" id="sec-recent" hidden data-i18n="adm.sec_recent"></button>
+          <button class="btn btn--quiet" type="button" id="sec-next" hidden data-i18n="adm.sec_next"></button>
         </div>
-        <div class="panel-body">
-          <p class="card-body" data-i18n="adm.cen_exp_why"></p>
-          <p class="form-note" data-i18n="adm.cen_exp_soft"></p>
-          <div class="notice" id="cen-ephemeral" hidden data-tone="bad"></div>
-        </div>
-      </article>
-
-      <!-- The visitor half -->
-      <article class="panel" data-exp="1">
-        <div class="panel-bar">
-          <span data-i18n="adm.cen_who"></span><b id="cen-window">-</b>
-        </div>
-        <div class="panel-body">
-          <div class="counts" id="cen-counts"></div>
-          <h3 class="card-meta" data-i18n="adm.cen_classes"></h3>
-          <div class="bars" id="cen-classes"></div>
-          <h3 class="card-meta" data-i18n="adm.cen_origins"></h3>
-          <div class="bars" id="cen-origins"></div>
-          <p class="form-note" data-i18n="adm.cen_who_note"></p>
-        </div>
-      </article>
-
-      <!-- ── The screens ─────────────────────────────────────────────
-           Which screen was opened, by name. The third count, and the one that
-           is a page rather than a person: /u/<who>/cards is counted as
-           "u.cards" and the profile is dropped before the count is taken, so
-           this half has no more idea who was here than the one below has.
-
-           Four families in one panel and not four panels, because /u is most
-           of the traffic and the other three are read against it - a
-           comparison that four boxes would break up. The bars share one
-           scale for the same reason. -->
-      <article class="panel" data-exp="1">
-        <div class="panel-bar">
-          <span data-i18n="adm.cen_screens"></span><b id="cen-screen-window">-</b>
-        </div>
-        <div class="panel-body">
-          <p class="card-body" data-i18n="adm.cen_screens_note"></p>
-          <div class="screen-bar">
-            <div class="field">
-              <label for="cen-screen-class" data-i18n="adm.cen_classes"></label>
-              <select class="select" id="cen-screen-class">
-                <option value="visitor" data-i18n="cen.class.visitor"></option>
-                <option value="" data-i18n="adm.cen_screen_any"></option>
-                <option value="ai" data-i18n="cen.class.ai"></option>
-                <option value="search" data-i18n="cen.class.search"></option>
-                <option value="tool" data-i18n="cen.class.tool"></option>
-                <option value="scanner" data-i18n="cen.class.scanner"></option>
-                <option value="unknown" data-i18n="cen.class.unknown"></option>
-              </select>
-            </div>
-            <span class="form-note" id="cen-screen-total"></span>
+        <details class="panel sec-orphans" id="sec-unassigned">
+          <summary id="sec-unassigned-summary"></summary>
+          <div class="panel-body">
+            <p class="form-note" data-i18n="adm.sec_unassigned_help"></p>
+            <div id="sec-unassigned-requests"></div>
           </div>
-          <div id="cen-screens"></div>
-          <h3 class="card-meta" data-i18n="adm.cen_screen_games"></h3>
-          <div class="bars" id="cen-screen-games"></div>
-          <h3 class="card-meta" data-i18n="adm.cen_screen_days"></h3>
-          <div class="bars" id="cen-screen-per-day"></div>
-          <p class="form-note" data-i18n="adm.cen_screen_note"></p>
-          <p class="empty" id="cen-screens-empty" hidden data-i18n="adm.cen_none"></p>
-        </div>
-      </article>
+        </details>
+      </div>
 
-      <!-- The profile half. No visitor is named here and none can be. -->
-      <article class="panel" data-exp="1">
-        <div class="panel-bar">
-          <span data-i18n="adm.cen_what"></span><b id="cen-subject-total">-</b>
-        </div>
-        <div class="panel-body">
-          <div class="bars" id="cen-subjects"></div>
-          <h3 class="card-meta" data-i18n="adm.cen_per_day"></h3>
-          <div class="bars" id="cen-per-day"></div>
-          <p class="form-note" data-i18n="adm.cen_what_note"></p>
-          <p class="empty" id="cen-empty" hidden data-i18n="adm.cen_none"></p>
-        </div>
-      </article>
+      <!-- ── The blog ────────────────────────────────────────────────
+           The only place a post can be written. The list and the editor are
+           one view rather than two screens: what is being edited and what else
+           exists are never a navigation apart. On a wide screen they are not a
+           scroll apart either - the editor takes the left of the bench and the
+           list stands beside it, so picking the next post to fix does not mean
+           losing sight of the one open. -->
+      <div id="view-blog" class="bench" hidden>
+        <div class="counts" id="blog-counts"></div>
 
-      <!-- What survived earlier rotations: counts, no identifiers at all -->
-      <article class="panel" data-exp="1">
-        <div class="panel-bar">
-          <span data-i18n="adm.cen_history"></span><b id="cen-history-n">-</b>
+        <div class="blog-grid">
+          <article class="panel blog-editor">
+            <div class="panel-bar">
+              <span id="editor-bar" data-i18n="adm.blog_new"></span><b id="editor-slug">-</b>
+            </div>
+            <div class="panel-body">
+              <form id="blog-form">
+                <div class="editor-row">
+                  <div class="field">
+                    <label for="b-slug" data-i18n="adm.blog_slug"></label>
+                    <input class="input" id="b-slug" type="text" maxlength="80"
+                           autocomplete="off" spellcheck="false"
+                           data-i18n-ph="adm.blog_slug_ph">
+                  </div>
+                  <div class="field">
+                    <label for="b-status" data-i18n="adm.blog_status"></label>
+                    <select class="select" id="b-status">
+                      <option value="draft" data-i18n="blog.draft"></option>
+                      <option value="published" data-i18n="blog.live"></option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="b-origin" data-i18n="adm.blog_origin"></label>
+                    <select class="select" id="b-origin">
+                      <option value="en">EN</option>
+                      <option value="pt">PT</option>
+                      <option value="ru">RU</option>
+                    </select>
+                  </div>
+                  <!-- Tags used to be one field for the whole post, up here with
+                       the status and the origin. They are words a reader reads, so
+                       they moved into the language panes beside the text they are
+                       read with: a post filed under "lançamento" was showing that
+                       to somebody reading the Russian. The origin's set is still
+                       the post's, and it is what a language nobody tagged shows. -->
+                  <!-- The readable end of the address, one per language, written by
+                       the model on the desk. Only a title that survives being
+                       stripped to a-z fills itself in while you type; a Russian one
+                       leaves nothing behind, and this is the button for it. -->
+                  <div class="field">
+                    <label for="b-slugs" data-i18n="adm.slug_lang"></label>
+                    <button class="btn btn--quiet" type="button" id="b-slugs"
+                            data-i18n="adm.slug_ai"></button>
+                  </div>
+                </div>
+
+                <!-- One tab per language, and each holds a whole post. A language
+                     left empty is a translation that does not exist yet, not an
+                     error: the site falls back to the original and says so. -->
+                <!-- Filled by admin.js from BLOG_LANGS, the same list the panes
+                     below are built from. They used to be written here by hand,
+                     three of them, and when the list grew to five the script
+                     looked for mark-zh-cn, found nothing, threw, and took the
+                     whole panel down with it - login included. -->
+                <nav class="tabs tabs--sub" id="lang-tabs"></nav>
+
+                <div id="lang-panes"></div>
+
+                <div class="form-foot">
+                  <button class="btn" type="submit" id="b-save" data-i18n="adm.blog_save"></button>
+                  <button class="btn btn--quiet" type="button" id="b-new" data-i18n="adm.blog_clear"></button>
+                  <a class="btn btn--quiet" id="b-open" hidden target="_blank" rel="noopener"
+                     data-i18n="adm.blog_open"></a>
+                  <span class="form-note" id="b-slugs-note"></span>
+                  <span class="form-note" id="b-note"></span>
+                </div>
+                <div class="notice" id="b-error" hidden data-tone="bad"></div>
+              </form>
+
+              <p class="form-note" data-i18n-html="adm.blog_help"></p>
+            </div>
+          </article>
+
+          <div class="blog-side">
+            <div class="triage" id="blog-list"></div>
+            <p class="empty" id="blog-empty" hidden data-i18n="adm.blog_none"></p>
+          </div>
         </div>
-        <div class="panel-body">
-          <div class="bars" id="cen-history"></div>
-          <p class="form-note" data-i18n="adm.cen_history_note"></p>
-        </div>
-      </article>
+      </div>
+
+      <!-- ── The count ───────────────────────────────────────────────
+           Two halves that do not meet, and the layout says so: the visitor
+           side and the profile side are separate panels with nothing drawn
+           between them, because there is nothing between them.
+
+           Everything in here carries data-exp. The whole section is new, so
+           marking each number individually would make the colour wallpaper
+           inside a week and stop being read - the section is marked once,
+           loudly, and the figures are left plain. If a number that is NOT an
+           experiment ever lands in here, it will be the odd one out, which is
+           the distinction being worth something again. -->
+      <div id="view-census" class="bench bench--census" hidden>
+        <article class="panel c-warn" data-exp="1">
+          <div class="panel-bar">
+            <span data-i18n="adm.cen_bar"></span>
+            <b class="exp-badge" data-i18n="adm.cen_exp"></b>
+          </div>
+          <div class="panel-body">
+            <p class="card-body" data-i18n="adm.cen_exp_why"></p>
+            <p class="form-note" data-i18n="adm.cen_exp_soft"></p>
+            <div class="notice" id="cen-ephemeral" hidden data-tone="bad"></div>
+            <div class="danger-zone">
+              <div class="form-foot">
+                <button class="btn btn--danger" type="button" id="cen-reset"
+                        data-i18n="adm.cen_reset"></button>
+                <span class="form-note" id="cen-reset-note" role="status"></span>
+              </div>
+              <p class="form-note" data-i18n="adm.cen_reset_help"></p>
+              <div class="notice" id="cen-reset-error" hidden data-tone="bad" role="alert"></div>
+            </div>
+          </div>
+        </article>
+
+        <!-- The visitor half -->
+        <article class="panel c-who" data-exp="1">
+          <div class="panel-bar">
+            <span data-i18n="adm.cen_who"></span><b id="cen-window">-</b>
+          </div>
+          <div class="panel-body">
+            <div class="counts" id="cen-counts"></div>
+            <h3 class="card-meta" data-i18n="adm.cen_classes"></h3>
+            <div class="bars" id="cen-classes"></div>
+            <h3 class="card-meta" data-i18n="adm.cen_origins"></h3>
+            <div class="bars" id="cen-origins"></div>
+            <p class="form-note" data-i18n="adm.cen_who_note"></p>
+          </div>
+        </article>
+
+        <!-- ── The screens ─────────────────────────────────────────────
+             Which screen was opened, by name. The third count, and the one that
+             is a page rather than a person: /u/<who>/cards is counted as
+             "u.cards" and the profile is dropped before the count is taken, so
+             this half has no more idea who was here than the one below has.
+
+             Four families in one panel and not four panels, because /u is most
+             of the traffic and the other three are read against it - a
+             comparison that four boxes would break up. The bars share one
+             scale for the same reason. -->
+        <article class="panel c-screens" data-exp="1">
+          <div class="panel-bar">
+            <span data-i18n="adm.cen_screens"></span><b id="cen-screen-window">-</b>
+          </div>
+          <div class="panel-body">
+            <p class="card-body" data-i18n="adm.cen_screens_note"></p>
+            <div class="screen-bar">
+              <div class="field">
+                <label for="cen-screen-class" data-i18n="adm.cen_classes"></label>
+                <select class="select" id="cen-screen-class">
+                  <option value="visitor" data-i18n="cen.class.visitor"></option>
+                  <option value="" data-i18n="adm.cen_screen_any"></option>
+                  <option value="ai" data-i18n="cen.class.ai"></option>
+                  <option value="search" data-i18n="cen.class.search"></option>
+                  <option value="tool" data-i18n="cen.class.tool"></option>
+                  <option value="scanner" data-i18n="cen.class.scanner"></option>
+                  <option value="unknown" data-i18n="cen.class.unknown"></option>
+                </select>
+              </div>
+              <span class="form-note" id="cen-screen-total"></span>
+            </div>
+            <div id="cen-screens"></div>
+            <h3 class="card-meta" data-i18n="adm.cen_screen_games"></h3>
+            <div class="bars" id="cen-screen-games"></div>
+            <h3 class="card-meta" data-i18n="adm.cen_screen_days"></h3>
+            <div class="bars" id="cen-screen-per-day"></div>
+            <p class="form-note" data-i18n="adm.cen_screen_note"></p>
+            <p class="empty" id="cen-screens-empty" hidden data-i18n="adm.cen_none"></p>
+          </div>
+        </article>
+
+        <!-- The profile half. No visitor is named here and none can be. -->
+        <article class="panel c-what" data-exp="1">
+          <div class="panel-bar">
+            <span data-i18n="adm.cen_what"></span><b id="cen-subject-total">-</b>
+          </div>
+          <div class="panel-body">
+            <div class="bars" id="cen-subjects"></div>
+            <h3 class="card-meta" data-i18n="adm.cen_per_day"></h3>
+            <div class="bars" id="cen-per-day"></div>
+            <p class="form-note" data-i18n="adm.cen_what_note"></p>
+            <p class="empty" id="cen-empty" hidden data-i18n="adm.cen_none"></p>
+          </div>
+        </article>
+
+        <!-- What survived earlier rotations: counts, no identifiers at all -->
+        <article class="panel c-hist" data-exp="1">
+          <div class="panel-bar">
+            <span data-i18n="adm.cen_history"></span><b id="cen-history-n">-</b>
+          </div>
+          <div class="panel-body">
+            <div class="bars" id="cen-history"></div>
+            <p class="form-note" data-i18n="adm.cen_history_note"></p>
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 
