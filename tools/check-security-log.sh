@@ -114,9 +114,25 @@ def upstream_count():
         return json.load(response)['test_upstream_requests']
 
 before = upstream_count()
-for agent in ('SemrushBot/7~bl', 'sEmRuShBoT-BA/1.0', 'SemrushBot-SI/1.0',
-              'SemrushBot-SWA/1.0', 'SemrushBot-OCOB/1.0', 'SemrushBot-FT/1.0',
-              'SemrushBot-ESI/1.0', 'SiteAuditBot/1.0', 'SplitSignalBot/1.0', 'RyteBot/1.0'):
+DENIED = ('SemrushBot/7~bl', 'sEmRuShBoT-BA/1.0', 'SemrushBot-SI/1.0',
+          'SemrushBot-SWA/1.0', 'SemrushBot-OCOB/1.0', 'SemrushBot-FT/1.0',
+          'SemrushBot-ESI/1.0', 'SiteAuditBot/1.0', 'SplitSignalBot/1.0', 'RyteBot/1.0',
+          # The backlink and SEO indexes, in the shapes they actually arrive in.
+          'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',
+          'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)',
+          'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot)',
+          'rogerbot/1.0', 'Mozilla/5.0 (compatible; BLEXBot/1.0)',
+          'Mozilla/5.0 (compatible; DataForSeoBot/1.0)', 'SerpstatBot/2.1',
+          'Barkrowler/0.9', 'SEOkicks/1.0', 'MegaIndex.ru/2.0', 'linkdexbot/2.2',
+          'Mozilla/5.0 (compatible; SISTRIX Crawler)', 'spbot/5.0',
+          'Screaming Frog SEO Spider/19.0',
+          # Sales intelligence and content resale.
+          'ZoomInfoBot/1.0', 'Diffbot/0.1', 'omgili/0.5 +https://omgili.com',
+          'Mozilla/5.0 (compatible; webzio-extended/1.0)',
+          # Survey scanners.
+          'Mozilla/5.0 (compatible; InternetMeasurement/1.0)',
+          'Mozilla/5.0 (compatible; CensysInspect/1.1)', 'Expanse, a Palo Alto Networks company')
+for agent in DENIED:
     for path in ('/g/440', '/api/probe', '/style.css', '/art/440.jpg', '/favicon.svg',
                  '/healthz', '/robots.txt', '/jogo/440', '/privacy/.env', '/appeal'):
         request = urllib.request.Request(sys.argv[1] + path, headers={'User-Agent': agent})
@@ -125,7 +141,7 @@ for agent in ('SemrushBot/7~bl', 'sEmRuShBoT-BA/1.0', 'SemrushBot-SI/1.0',
         except urllib.error.HTTPError as exc:
             assert exc.code == 403, (agent, path, exc.code)
         else:
-            raise AssertionError((agent, path, 'Semrush obtained access'))
+            raise AssertionError((agent, path, 'denied crawler obtained access'))
 for method in ('POST', 'HEAD', 'OPTIONS'):
     request = urllib.request.Request(sys.argv[1] + '/api/probe', method=method,
                                      headers={'User-Agent': 'SemrushBot/7~bl'})
@@ -135,6 +151,43 @@ for method in ('POST', 'HEAD', 'OPTIONS'):
         assert exc.code == 403, (method, exc.code)
     else:
         raise AssertionError((method, 'Semrush obtained access'))
-assert upstream_count() == before, 'Denied Semrush requests reached the upstream API'
-print('Semrush denied: all crawler tokens, paths and HTTP methods; zero upstream requests')
+assert upstream_count() == before, 'Denied crawler requests reached the upstream API'
+print(f'denied: {len(DENIED)} crawler tokens, all paths and HTTP methods; zero upstream requests')
+
+# The other direction, which is the one a denylist gets wrong. A token added
+# carelessly - `~*bot`, `~*spider` - refuses Googlebot and every assistant with
+# somebody waiting on it, and nothing about the site looks broken from here:
+# the readers simply stop arriving. So the agents that must get in are asserted
+# by name, and this half is why the list above is safe to add to.
+ALLOWED = (
+    # Search engines. They send readers.
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+    'DuckDuckBot/1.1; (+http://duckduckgo.com/duckduckbot.html)',
+    'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
+    'Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)',
+    'Mozilla/5.0 (compatible; Applebot/0.1; +http://www.apple.com/go/applebot)',
+    # Somebody asked their assistant about a page and is waiting for the answer.
+    'Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)',
+    'Mozilla/5.0 (compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)',
+    'Mozilla/5.0 (compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)',
+    'Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)',
+    'Mozilla/5.0 (compatible; Claude-User/1.0; +claudebot@anthropic.com)',
+    'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)',
+    # The unfurlers, which draw the card when somebody pastes a link.
+    'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+    'Twitterbot/1.0', 'facebookexternalhit/1.1', 'Slackbot-LinkExpanding 1.0',
+    'TelegramBot (like TwitterBot)',
+    # And a person.
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36',
+)
+for agent in ALLOWED:
+    request = urllib.request.Request(sys.argv[1] + '/about.html', headers={'User-Agent': agent})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            assert response.status == 200, (agent, response.status)
+    except urllib.error.HTTPError as exc:
+        raise AssertionError((agent, exc.code, 'a wanted agent was refused'))
+print(f'allowed: {len(ALLOWED)} search, assistant, unfurler and human agents still get in')
 PY
