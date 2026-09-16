@@ -788,64 +788,18 @@ button.mod:hover { border-color: var(--line-2); color: var(--text); }
   .c-hist { grid-column: span 6; }
 }
 
-/* ── The experimental marking ──────────────────────────────────────────
-   One colour, reserved, and it deliberately is not --accent.
-
-   --accent is #ffb454, warm amber, and it is the site's primary: the active
-   row in the rail, the focus ring, an unread appeal, the dot in the wordmark.
-   A yellow badge in that hue would read as "this is highlighted", which is the
-   opposite of what it has to say. So --exp is a colder, sourer yellow that
-   appears nowhere else on either page, and what separates it from the accent is
-   not only the hue but the treatment: hatched rather than solid. A stripe
-   pattern is not something this interface does anywhere, so it cannot be
-   mistaken for ordinary emphasis even at a glance.
-
-   The marking goes on the section, not on each figure. Everything in the census
-   view is new, so a badge per number would be a wall of yellow inside a week
-   and would stop being read - which is worse than no marking, because it looks
-   like diligence. */
-:root {
-  --exp: #e3d54a;
-  --exp-d: #8f8420;
-}
-
-/* The row in the rail, so the warning is visible before the view is opened. */
-.rail .tab[data-exp] b.exp-dot { background: none; color: var(--exp); font-size: 9px; padding: 0; }
-.rail .tab[data-exp][data-on] { box-shadow: inset 2px 0 0 var(--exp); }
-.rail .tab[data-exp][data-on] b.exp-dot { background: none; color: var(--exp); }
-
-/* The zone. Left edge plus a wash, which is what makes it a place rather than
-   a highlight - accents in this interface are always small and inline. */
-.panel[data-exp] {
-  border-left: 3px solid var(--exp);
-  background:
-    linear-gradient(0deg, rgba(227, 213, 74, 0.045), rgba(227, 213, 74, 0.045)),
-    var(--panel);
-}
-.panel[data-exp] .panel-bar { border-bottom-color: var(--exp-d); }
-
-/* The label. Outlined and hatched, never filled: a solid yellow pill is a
-   button, and this is not clickable. */
-.exp-badge {
-  padding: 3px 9px;
-  border: 1px solid var(--exp-d);
-  border-radius: 999px;
-  color: var(--exp);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(227, 213, 74, 0.14) 0 3px,
-    transparent 3px 7px);
-}
-
 /* ── Bars ─────────────────────────────────────────────────────────────
    The census draws counts and nothing else, so one primitive covers all of
    it: a label, a proportional bar, a number. Deliberately not a chart - a
-   count of forty things does not need axes, and a chart would make an
-   experimental number look more settled than it is. */
+   count of forty things does not need axes, and this view is read for shape
+   rather than for values to a decimal.
+
+   These were a sour yellow, which was the colour the whole view wore while it
+   was marked experimental. That marking is gone, so the bars come back to the
+   one accent the site has. Amber at full strength is what the interface uses
+   for "look here", and forty bars are not forty things to look at, so the
+   ordinary fill is the dim amber and the full one is kept for the distinction
+   below. */
 .bars { display: grid; gap: 5px; margin: 10px 0 16px; }
 .bar-row {
   display: grid;
@@ -859,10 +813,10 @@ button.mod:hover { border-color: var(--line-2); color: var(--text); }
 .bar-row > span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-row > b { color: var(--text); font-weight: 600; }
 .bar-track { height: 7px; background: var(--line); border-radius: 999px; overflow: hidden; }
-.bar-fill { height: 100%; background: var(--exp-d); border-radius: 999px; }
+.bar-fill { height: 100%; background: var(--accent-d); border-radius: 999px; }
 /* The confidence of a label, which is the one thing in here worth colouring
    differently: a guess and a declaration should not look alike. */
-.bar-row[data-conf="declared"] .bar-fill { background: var(--exp); }
+.bar-row[data-conf="declared"] .bar-fill { background: var(--accent); }
 .bar-row[data-conf="unsure"] .bar-fill { background: var(--faint); }
 
 /* ── The screens ──────────────────────────────────────────────────────

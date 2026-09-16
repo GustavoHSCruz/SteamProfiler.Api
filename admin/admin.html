@@ -127,12 +127,8 @@
         <button class="tab" type="button" id="tab-blog" data-view="blog">
           <span data-i18n="adm.tab_blog"></span><b id="badge-blog"></b>
         </button>
-        <!-- The one tab whose badge is a warning rather than a number. `data-exp`
-             is what admin.css hangs the experimental colour off, and it is on the
-             tab as well as on the panels so the marking is visible before the
-             view is even opened. -->
-        <button class="tab" type="button" id="tab-census" data-view="census" data-exp="1">
-          <span data-i18n="adm.tab_census"></span><b class="exp-dot">●</b>
+        <button class="tab" type="button" id="tab-census" data-view="census">
+          <span data-i18n="adm.tab_census"></span>
         </button>
       </nav>
 
@@ -360,21 +356,24 @@
            side and the profile side are separate panels with nothing drawn
            between them, because there is nothing between them.
 
-           Everything in here carries data-exp. The whole section is new, so
-           marking each number individually would make the colour wallpaper
-           inside a week and stop being read - the section is marked once,
-           loudly, and the figures are left plain. If a number that is NOT an
-           experiment ever lands in here, it will be the odd one out, which is
-           the distinction being worth something again. -->
+           This section carried an experimental marking - a sour yellow edge on
+           every panel and a badge in the bar - for as long as it was switched
+           on to see whether it was any use. It is not that any more, so the
+           marking is gone: a warning colour that outlives the warning is a
+           colour the next one gets read as.
+
+           What did not go is the caveat under the title. That the numbers are
+           soft - recycled addresses, one person on three networks, a kind
+           guessed from behaviour - was never about the feature being new, and
+           it is still the difference between reading these as recurring visits
+           and reading them as people. -->
       <div id="view-census" class="bench bench--census" hidden>
-        <article class="panel c-warn" data-exp="1">
+        <article class="panel c-warn">
           <div class="panel-bar">
             <span data-i18n="adm.cen_bar"></span>
-            <b class="exp-badge" data-i18n="adm.cen_exp"></b>
           </div>
           <div class="panel-body">
-            <p class="card-body" data-i18n="adm.cen_exp_why"></p>
-            <p class="form-note" data-i18n="adm.cen_exp_soft"></p>
+            <p class="card-body" data-i18n="adm.cen_exp_soft"></p>
             <div class="notice" id="cen-ephemeral" hidden data-tone="bad"></div>
             <div class="danger-zone">
               <div class="form-foot">
@@ -389,7 +388,7 @@
         </article>
 
         <!-- The visitor half -->
-        <article class="panel c-who" data-exp="1">
+        <article class="panel c-who">
           <div class="panel-bar">
             <span data-i18n="adm.cen_who"></span><b id="cen-window">-</b>
           </div>
@@ -413,7 +412,7 @@
              of the traffic and the other three are read against it - a
              comparison that four boxes would break up. The bars share one
              scale for the same reason. -->
-        <article class="panel c-screens" data-exp="1">
+        <article class="panel c-screens">
           <div class="panel-bar">
             <span data-i18n="adm.cen_screens"></span><b id="cen-screen-window">-</b>
           </div>
@@ -445,7 +444,7 @@
         </article>
 
         <!-- The profile half. No visitor is named here and none can be. -->
-        <article class="panel c-what" data-exp="1">
+        <article class="panel c-what">
           <div class="panel-bar">
             <span data-i18n="adm.cen_what"></span><b id="cen-subject-total">-</b>
           </div>
@@ -459,7 +458,7 @@
         </article>
 
         <!-- What survived earlier rotations: counts, no identifiers at all -->
-        <article class="panel c-hist" data-exp="1">
+        <article class="panel c-hist">
           <div class="panel-bar">
             <span data-i18n="adm.cen_history"></span><b id="cen-history-n">-</b>
           </div>

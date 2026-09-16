@@ -10,8 +10,6 @@ const ADM_DICT = {
   en: {
     'adm.tab_census': 'count',
     'adm.cen_bar': 'what this is',
-    'adm.cen_exp': 'experimental',
-    'adm.cen_exp_why': 'Switched on to see whether it is any use. If it gets in the way of the people using the site, it comes back off - that is what the marking means, not that the numbers are to be distrusted and kept anyway.',
     'adm.cen_exp_soft': 'They are soft all the same, and in a way worth knowing: addresses get recycled, so one shared carrier address makes many people look like one, and the same person on wifi, on a phone and behind a VPN looks like several. A kind is a guess from behaviour and it gets it wrong. Read these as recurring visits, not as people.',
     'adm.cen_who': 'visits that came back',
     'adm.cen_who_note': 'Recognisable for seven days, then the secret is replaced and these become counts with no handle in them. Nothing here says which profile any of them asked for - there is no column for it.',
@@ -159,8 +157,6 @@ const ADM_DICT = {
   pt: {
     'adm.tab_census': 'contagem',
     'adm.cen_bar': 'o que isso é',
-    'adm.cen_exp': 'experimental',
-    'adm.cen_exp_why': 'Ligado pra ver se serve. Se atrapalhar quem usa o site, é desligado - é isso que a marcação quer dizer, e não que os números são pra desconfiar e ficar do mesmo jeito.',
     'adm.cen_exp_soft': 'Ainda assim eles são moles, e de um jeito que vale saber: endereços são reciclados, então um endereço compartilhado de operadora faz muita gente parecer uma só, e a mesma pessoa no wifi, no celular e atrás de uma VPN parece várias. O tipo é um chute pelo comportamento, e ele erra. Leia isso como visitas recorrentes, não como pessoas.',
     'adm.cen_who': 'visitas que voltaram',
     'adm.cen_who_note': 'Reconhecíveis por sete dias; depois o segredo é trocado e isso vira contagem sem alça nenhuma dentro. Nada aqui diz qual perfil qualquer uma delas consultou - não existe coluna pra isso.',
@@ -308,8 +304,6 @@ const ADM_DICT = {
   ru: {
     'adm.tab_census': 'подсчёт',
     'adm.cen_bar': 'что это такое',
-    'adm.cen_exp': 'эксперимент',
-    'adm.cen_exp_why': 'Включено, чтобы посмотреть, есть ли польза. Если это мешает тем, кто пользуется сайтом, его выключают - вот что означает пометка, а не то, что числам не стоит доверять, но они всё равно останутся.',
     'adm.cen_exp_soft': 'И всё же они мягкие, и стоит знать, в чём именно: адреса переиспользуются, поэтому один общий адрес оператора делает так, что много людей выглядят как один, а один и тот же человек по wi-fi, с телефона и через VPN выглядит как несколько. Тип - это догадка по поведению, и она ошибается. Читайте это как повторные визиты, а не как людей.',
     'adm.cen_who': 'визиты, которые вернулись',
     'adm.cen_who_note': 'Узнаваемы семь дней, затем секрет заменяется, и это становится числами без всякой ручки внутри. Ничто здесь не говорит, какой профиль кто-то из них смотрел, - для этого нет столбца.',
