@@ -59,6 +59,39 @@ Open <http://127.0.0.1:16200>. The default bind is loopback-only. Set
 behind TLS. Set `FRONTEND_DIR` if the frontend is not checked out beside the
 API.
 
+Behind a reverse proxy, configure the visitor IP before enabling traffic
+metrics or rate limits: put `set_real_ip_from` with the exact proxy source
+address and `real_ip_header` with its visitor IP header in a `.conf` file
+under `proxy-trust/` (or `NGINX_PROXY_TRUST_DIR`). For Cloudflare Tunnel use
+`CF-Connecting-IP`; an example is in `proxy-trust/cloudflare.conf.example`.
+The default directory has no active configuration and trusts no forwarded IP
+headers. Proxy configuration belongs to the operator and deploy preserves it.
+Recreate the web container after configuring this mount.
+
+The admin security view keeps every completed client request received by nginx
+for seven days (up to 20,000 events), regardless of path, User-Agent or HTTP
+status. Labels and signals are informational and never filter collection.
+Query values are retained after sensitive-field scrubbing. It shows method, scrubbed URL,
+HTTP response, timing, User-Agent, country and a salted origin identifier.
+Credentials, raw IP addresses and request bodies are not retained. nginx sends
+events over UDP port 1514 on the internal compose network; do not publish that
+port. Collection is best effort and the panel reports buffer drops and invalid
+messages. `SECURITY_RETENTION_DAYS` and `SECURITY_MAX_EVENTS` bound retention.
+The screen filter can hide a comma-separated list of origin hashes; hiding only
+changes the panel view and never deletes or stops collecting those requests.
+Each screen visit has a block action that bans the displayed origin hash for the
+normal two-day gate period without recovering the raw address. A banned origin
+also receives a generic `500` from `/healthz`; the container's private
+healthcheck remains exempt so the service can stay alive.
+
+Semrush crawlers are permanently denied with HTTP 403 at nginx's origin server
+level, including pages, APIs, assets, redirects, robots.txt and routes that skip
+the IP gate. The policy matches SemrushBot variants, SiteAuditBot, SplitSignalBot
+and RyteBot as listed by https://www.semrush.com/bot/. robots.txt also disallows
+all paths for these agents. A Cloudflare custom WAF rule is still required to
+deny responses already present in the edge cache. Denied origin requests remain
+in the private security history.
+
 ## Run without Docker
 
 Python 3.12 or newer is recommended. There is nothing to install:

@@ -12,6 +12,7 @@ import houses
 import meta
 import proton
 import store
+import security_log
 
 
 # SQLite answers `PRAGMA synchronous` as a number.
@@ -33,6 +34,7 @@ EXPECTED = {
     proton: NORMAL,
     houses: NORMAL,
     census: NORMAL,
+    security_log: NORMAL,
     blog: FULL,
     store: FULL,
     bans: FULL,

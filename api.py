@@ -46,9 +46,14 @@ Steam. Everything is a GET, everything is cached, and nothing is written to disk
     POST /blog/vote                 -> toggle a vote on a post
 
     GET  /admin/census              -> the traffic count, owner only
+    GET  /admin/security            -> sanitised security request evidence
+    GET  /admin/security/screens    -> visits with related requests in details
     GET  /admin/inbox               -> everything, owner only
     POST /admin/update              -> set a status or write a reply
     POST /admin/delete              -> drop a message
+    POST /admin/census/reset        -> clear all traffic metrics and history
+    POST /admin/security/reset      -> clear security request history
+    POST /admin/security/block      -> block a displayed origin hash
     GET  /admin/blog                -> every post, drafts included
     POST /admin/blog/save           -> write one
     POST /admin/blog/delete         -> drop one
@@ -89,6 +94,7 @@ import cards
 import community
 import embed
 import census
+import security_log
 import fetch
 import fx
 import houses
@@ -1920,6 +1926,20 @@ class Handler(BaseHTTPRequestHandler):
                 # moment where being a minute stale would be noticed.
                 census.flush()
                 return self.send_json(200, do_census())
+            if url.path in ("/admin/security", "/admin/security/screens"):
+                self.require_admin()
+                try:
+                    before = int(one("before") or 0)
+                    filters = (one("kind"), one("actor"), one("status"), one("q"), before)
+                    if url.path.endswith("/screens"):
+                        report = security_log.screens_report(*filters, visit=int(one("visit") or 0),
+                                                             unassigned=one("unassigned") == "1",
+                                                             exclude=one("exclude"))
+                    else:
+                        report = security_log.report(*filters)
+                except ValueError:
+                    raise Fail(400, "@err.bad_id")
+                return self.send_json(200, report)
             if url.path == "/og.png":
                 # Takes whatever is in the URL rather than a steamid, because
                 # nginx hands it the path segment and knows nothing else. The
@@ -2190,6 +2210,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, blog.vote(key, self.caller))
 
             self.require_admin()
+            if url.path == "/admin/census/reset":
+                census.reset()
+                return self.send_json(200, do_census())
+            if url.path == "/admin/security/reset":
+                security_log.reset()
+                report = security_log.screens_report if body.get("view") == "screens" else security_log.report
+                return self.send_json(200, report())
+            if url.path == "/admin/security/block":
+                who = str(body.get("actor") or body.get("ip_hash") or "").strip()
+                try:
+                    bans.ban_hash(who, reason="admin", path=body.get("path"))
+                except ValueError:
+                    raise Fail(400, "@err.bad_id")
+                ban = bans.by_hash(who) or {}
+                return self.send_json(200, {"ok": True, "until_at": ban.get("until_at")})
             # Lifting a ban has to happen in *this* process. bans.py keeps the
             # live list in memory and only writes through to SQLite, so a
             # DELETE run from a shell or from the admin container clears the
@@ -2324,6 +2359,10 @@ if __name__ == "__main__":
     # have to exist before the first one arrives. A census that fails is caught
     # and logged rather than fatal - it is the one thing here nothing depends on.
     census.init()
+    try:
+        security_log.start()
+    except Exception as exc:
+        print(f"security log: startup failed ({type(exc).__name__})", file=sys.stderr)
     # The storefront crawler. It owns its own pace and never blocks a request;
     # what it fills in is read off disk by whoever asks next.
     meta.start()

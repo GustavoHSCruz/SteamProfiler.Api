@@ -32,7 +32,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$WORK/site" "$WORK/next/about"
+mkdir -p "$WORK/site" "$WORK/next/about" "$WORK/proxy-trust"
 for lang in en pt ru zh-cn zh-tw; do
   printf 'const DICT_LANG = %s;\n' "'$lang'" > "$WORK/site/dict.$lang.js"
   # The rebuilt front ships one file per page per language and the cookie
@@ -46,7 +46,24 @@ done
 # leave yesterday's page standing rather than take the site down.
 printf '<!doctype html><title>PAGE_LANG old-site</title>\n' > "$WORK/site/status.html"
 # The gate says "not banned" to everything. auth_request treats 204 as a pass.
-printf 'server { listen 8000; location / { return 204; } }\n' > "$WORK/gate.conf"
+cat > "$WORK/gate.conf" <<'NGINX'
+map $http_x_test_expect_ip $expected_ip {
+    default $http_x_test_expect_ip;
+    "" $http_x_real_ip;
+}
+map $http_x_test_expect_country $expected_country {
+    default $http_x_test_expect_country;
+    "" $http_cf_ipcountry;
+}
+server {
+    listen 8000;
+    location / {
+        if ($http_x_real_ip != $expected_ip) { return 403; }
+        if ($http_cf_ipcountry != $expected_country) { return 403; }
+        return 204;
+    }
+}
+NGINX
 
 docker network create "$NET" >/dev/null || { echo "FAIL  dict routing: no network"; exit 1; }
 docker run -d --name "$GATE" --network "$NET" --network-alias api \
@@ -54,6 +71,7 @@ docker run -d --name "$GATE" --network "$NET" --network-alias api \
   || { echo "FAIL  dict routing: the stub gate did not start"; exit 1; }
 docker run -d --name "$WEB" --network "$NET" \
   -v "$ROOT/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$WORK/proxy-trust:/etc/nginx/proxy-trust:ro" \
   -v "$WORK/site:/usr/share/nginx/html:ro" \
   -v "$WORK/next:/usr/share/nginx/next:ro" \
   -p 127.0.0.1:0:80 nginx:alpine >/dev/null \
@@ -126,5 +144,42 @@ if [ "$got" != "old-site" ]; then
   fails=$((fails + 1))
 fi
 
+# Verify the address actually sent through /_gate to the API, rather than
+# just nginx's response. The stub rejects a different IP or country.
+gateway="$(docker network inspect "$NET" --format '{{(index .IPAM.Config 0).Gateway}}')"
+ask en "untrusted forwarded IP is ignored by default" \
+  -H 'CF-Connecting-IP: 198.51.100.7' -H "X-Test-Expect-IP: $gateway"
+
+printf 'set_real_ip_from %s;\nreal_ip_header CF-Connecting-IP;\n' "$gateway" \
+  > "$WORK/proxy-trust/cloudflare.conf"
+docker exec "$WEB" nginx -t >/dev/null 2>&1 || exit 1
+docker exec "$WEB" nginx -s reload >/dev/null 2>&1 || exit 1
+# Wait for old workers to retire after the configuration reload.
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null -H 'CF-Connecting-IP: 198.51.100.7' \
+      -H 'X-Test-Expect-IP: 198.51.100.7' "http://127.0.0.1:$PORT/dict.js" 2>/dev/null; then break; fi
+  sleep 0.2
+done
+ask en "first visitor reaches the API with its own IP and country" \
+  -H 'CF-Connecting-IP: 198.51.100.7' -H 'CF-IPCountry: BR' \
+  -H 'X-Test-Expect-IP: 198.51.100.7' -H 'X-Test-Expect-Country: BR'
+ask en "second visitor remains separate" \
+  -H 'CF-Connecting-IP: 203.0.113.8' -H 'CF-IPCountry: DE' \
+  -H 'X-Test-Expect-IP: 203.0.113.8' -H 'X-Test-Expect-Country: DE'
+ask en "IPv6 visitor reaches the API" \
+  -H 'CF-Connecting-IP: 2001:db8::7' -H 'X-Test-Expect-IP: 2001:db8::7'
+ask en "a missing forwarded IP keeps the source address" -H "X-Test-Expect-IP: $gateway"
+ask en "an invalid forwarded IP keeps the source address" \
+  -H 'CF-Connecting-IP: invalid' -H "X-Test-Expect-IP: $gateway"
+
+gate_ip="$(docker inspect "$GATE" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')"
+got="$(docker exec "$GATE" wget -qO- \
+  --header='CF-Connecting-IP: 198.51.100.7' \
+  --header="X-Test-Expect-IP: $gate_ip" "http://$WEB/dict.js" 2>/dev/null)"
+if [[ "$got" != *"DICT_LANG = 'en'"* ]]; then
+  echo "FAIL  a client outside the trusted proxy cannot replace its IP"
+  fails=$((fails + 1))
+fi
+
 [ "$fails" -ne 0 ] && exit 1
-echo "dict routing ok: cookie beats Accept-Language, both beat nothing, and a missing page falls back"
+echo "dict routing and trusted proxy IP forwarding ok"

@@ -74,6 +74,7 @@ if command -v docker >/dev/null 2>&1; then
       -v "$ROOT/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
       nginx:alpine nginx -t
   step "dict routing" ./tools/check-dict-routing.sh
+  step "security request logging" bash ./tools/check-security-log.sh
 
   # `env_file: .env` makes compose refuse to parse the file at all when .env is
   # missing, and .env is gitignored - so it is missing in every clean checkout,

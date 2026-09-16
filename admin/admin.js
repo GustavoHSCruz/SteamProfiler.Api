@@ -272,11 +272,13 @@ function showView(name) {
   }
   el('view-mail').hidden = name !== 'mail';
   el('view-block').hidden = name !== 'block';
+  el('view-security').hidden = name !== 'security';
   el('view-blog').hidden = name !== 'blog';
   el('view-census').hidden = name !== 'census';
   // Fetched on open rather than with the inbox: it is a read nobody needs on
   // every sign-in, and the api flushes the in-memory half to answer it.
   if (name === 'census') loadCensus();
+  if (name === 'security') loadSecurity();
 }
 
 for (const b of document.querySelectorAll('#tabs .tab')) {
@@ -673,6 +675,224 @@ el('blog-form').addEventListener('submit', async (e) => {
    Bars, not charts. Forty of anything does not need axes, and a chart would
    lend an experimental number a settledness it has not earned. */
 
+let securityBefore = 0;
+let securityNext = null;
+let securityVersion = 0;
+let securityResetting = false;
+
+async function loadSecurity(before = 0) {
+  if (securityResetting) return;
+  securityBefore = before;
+  const version = ++securityVersion;
+  const params = securityFilters();
+  if (before) params.set('before', String(before));
+  el('sec-error').hidden = true;
+  try {
+    const d = await api(`/security/screens?${params}`, auth());
+    if (version !== securityVersion) return;
+    renderSecurity(d, before);
+    paintLive();
+  } catch (e) {
+    if (version !== securityVersion) return;
+    el('sec-error').textContent = e.message;
+    el('sec-error').hidden = false;
+  }
+}
+
+function securityFilters() {
+  const params = new URLSearchParams();
+  for (const [key, id] of [['kind', 'sec-kind'], ['status', 'sec-status'],
+    ['actor', 'sec-actor'], ['q', 'sec-query'], ['exclude', 'sec-hide-actor']]) {
+    const value = el(id).value.trim();
+    if (value) params.set(key, value);
+  }
+  try { localStorage.setItem('steamprofiler.security.hidden', el('sec-hide-actor').value); } catch { /* private storage */ }
+  return params;
+}
+
+function securityBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function securityRequestTable() {
+  const body = h('tbody', {});
+  const table = h('div', { cls: 'sec-table-wrap' },
+    h('table', { cls: 'sec-table' },
+      h('thead', {}, h('tr', {},
+        ...['category', 'time', 'method', 'request', 'status', 'duration', 'bytes'].map(
+          (key) => h('th', { attr: { scope: 'col' }, text: t(`adm.sec_col_${key}`) })))),
+      body));
+  return { table, body };
+}
+
+function appendSecurityRequests(body, rows) {
+  for (const row of rows) {
+    body.append(h('tr', { data: { error: row.status >= 400 ? '1' : '0' } },
+      h('td', { text: t(`adm.sec_category_${row.category || 'other'}`) }),
+      h('td', { attr: { title: stamp(row.at * 1000) },
+        text: new Date(row.at * 1000).toLocaleTimeString() }),
+      h('td', { cls: 'sec-method', text: row.method }),
+      h('td', {}, h('code', { cls: 'sec-request-uri', text: row.uri }),
+        row.signals.length ? h('span', { cls: 'sec-request-signals',
+          text: row.signals.map((signal) => t(`adm.sec_signal_${signal}`)).join(' · ') }) : null),
+      h('td', {}, h('span', { cls: 'sec-status', data: { error: row.status >= 400 ? '1' : '0' },
+        text: String(row.status) })),
+      h('td', { text: `${row.duration_ms} ms` }),
+      h('td', { text: securityBytes(row.bytes) })));
+  }
+}
+
+function attachSecurityDetails(details, box, extra) {
+  const { table, body } = securityRequestTable();
+  const note = h('p', { cls: 'form-note', attr: { role: 'status' } });
+  const more = h('button', { cls: 'btn btn--quiet',
+    attr: { type: 'button', hidden: '' }, text: t('adm.sec_more_requests') });
+  box.append(note, table, more);
+  let loaded = false;
+  let loading = false;
+  let next = null;
+  const version = securityVersion;
+
+  async function read(before = 0) {
+    if (loading) return;
+    loading = true;
+    more.disabled = true;
+    note.textContent = t('adm.sec_loading');
+    const params = securityFilters();
+    for (const [key, value] of Object.entries(extra)) params.set(key, String(value));
+    if (before) params.set('before', String(before));
+    try {
+      const d = await api(`/security/screens?${params}`, auth());
+      if (!details.isConnected || version !== securityVersion) return;
+      appendSecurityRequests(body, d.items);
+      loaded = true;
+      next = d.next_before;
+      more.hidden = !next;
+      note.textContent = d.items.length ? '' : t('adm.sec_details_empty');
+    } catch (e) {
+      if (details.isConnected && version === securityVersion) note.textContent = e.message;
+    } finally {
+      loading = false;
+      more.disabled = false;
+    }
+  }
+  details.addEventListener('toggle', () => { if (details.open && !loaded) read(); });
+  more.addEventListener('click', () => { if (next) read(next); });
+}
+
+function securityVisit(row) {
+  const requests = h('div', { cls: 'sec-visit-requests' });
+  const blockNote = h('span', { cls: 'form-note' });
+  const hide = h('button', { cls: 'btn btn--quiet btn--small',
+    attr: { type: 'button' }, text: t('adm.sec_hide_actor') });
+  hide.addEventListener('click', () => {
+    const field = el('sec-hide-actor');
+    const values = field.value.split(/[\s,]+/).filter(Boolean);
+    if (!values.includes(row.actor)) values.push(row.actor);
+    field.value = values.join(', ');
+    loadSecurity();
+  });
+  const block = h('button', { cls: 'btn btn--danger btn--small',
+    attr: { type: 'button' }, text: t('adm.sec_block') });
+  block.addEventListener('click', async () => {
+    if (!confirm(t('adm.sec_block_confirm'))) return;
+    block.disabled = true;
+    try {
+      await post('/security/block', { actor: row.actor, path: row.uri }, auth());
+      block.textContent = t('adm.sec_blocked');
+      blockNote.textContent = t('adm.sec_blocked_note');
+    } catch (e) {
+      block.disabled = false;
+      blockNote.textContent = e.message;
+    }
+  });
+  const details = h('details', { cls: 'sec-details' },
+    h('summary', { text: t('adm.sec_visit_details', { n: row.request_count }) }),
+    h('p', { cls: 'sec-origin' },
+      txt(`${t('adm.sec_actor')}: `), h('span', { cls: 'sec-country-tag', text: row.country || '?' }),
+      txt(' '), h('code', { text: row.actor })),
+    h('p', { cls: 'sec-origin', text: `User-Agent: ${row.ua || '?'}` }), requests);
+  attachSecurityDetails(details, requests, { visit: row.id });
+  return h('article', { cls: 'item sec-visit', data: { visit: String(row.id), error: row.errors ? '1' : '0' } },
+    h('div', { cls: 'sec-visit-head' },
+      h('code', { cls: 'sec-screen-uri', text: row.uri }),
+      row.status != null ? h('span', { cls: 'sec-status',
+        data: { error: row.status >= 400 ? '1' : '0' }, text: `HTTP ${row.status}` }) : null),
+    h('p', { cls: 'sec-visit-meta' },
+      txt(`${stamp(row.at * 1000)} · `), h('span', { cls: 'sec-country-tag', text: row.country || '?' }),
+      txt(' · '), h('code', { text: `${row.actor.slice(0, 12)}…` })),
+    h('div', { cls: 'sec-metrics' },
+      h('span', { text: t('adm.sec_request_count', { n: row.request_count }) }),
+      h('span', { text: `API: ${row.counts.api}` }),
+      h('span', { text: t('adm.sec_asset_count', { n: row.counts.asset }) }),
+      h('span', { cls: row.errors ? 'sec-error-count' : '',
+        text: t('adm.sec_error_count', { n: row.errors }) }),
+      h('span', { text: securityBytes(row.bytes) }),
+      h('span', { text: `${row.span_ms} ms` })),
+    row.signals.length ? h('p', { cls: 'sec-signals',
+      text: row.signals.map((signal) => t(`adm.sec_signal_${signal}`)).join(' · ') }) : null,
+    !row.document_present ? h('p', { cls: 'form-note', text: t('adm.sec_referrer_page') }) : null,
+    h('div', { cls: 'sec-block-tools' }, hide, block, blockNote),
+    details);
+}
+
+function renderSecurity(d, before = 0) {
+  el('sec-total').textContent = t('adm.sec_total', { n: d.total, requests: d.request_total });
+  el('badge-security').textContent = d.total ? String(d.total) : '';
+  el('sec-retention').textContent = t('adm.sec_retention', { days: d.retention_days, n: d.max_events });
+  el('sec-collection').textContent = !d.running ? t('adm.sec_offline')
+    : d.dropped || d.malformed ? t('adm.sec_loss', { n: d.dropped, invalid: d.malformed })
+      : !d.last_received ? t('adm.sec_waiting') : t('adm.sec_active');
+  const box = el('sec-requests');
+  box.textContent = '';
+  for (const row of d.items) box.append(securityVisit(row));
+  el('sec-empty').hidden = d.items.length > 0;
+  securityNext = d.next_before;
+  el('sec-next').hidden = !securityNext;
+  el('sec-recent').hidden = !before;
+  const orphans = el('sec-unassigned');
+  orphans.open = false;
+  orphans.hidden = !d.unassigned_total;
+  el('sec-unassigned-summary').textContent = t('adm.sec_unassigned', { n: d.unassigned_total });
+  const orphanBox = el('sec-unassigned-requests');
+  orphanBox.textContent = '';
+  // Replace the node to drop listeners and cursors from the previous filter.
+  const fresh = orphans.cloneNode(true);
+  orphans.replaceWith(fresh);
+  attachSecurityDetails(fresh, el('sec-unassigned-requests'), { unassigned: 1 });
+  seenAt.security = Date.now();
+}
+
+el('sec-reset').addEventListener('click', async () => {
+  if (securityResetting || !confirm(t('adm.sec_reset_confirm'))) return;
+  securityResetting = true;
+  ++securityVersion;
+  el('sec-reset').disabled = true;
+  el('sec-reset-note').textContent = '';
+  el('sec-error').hidden = true;
+  try {
+    const d = await post('/security/reset', { view: 'screens' }, auth());
+    el('sec-filters').reset();
+    securityBefore = 0;
+    renderSecurity(d);
+    el('sec-reset-note').textContent = t('adm.sec_reset_done');
+    paintLive();
+  } catch (e) {
+    el('sec-error').textContent = e.message;
+    el('sec-error').hidden = false;
+  } finally {
+    securityResetting = false;
+    el('sec-reset').disabled = false;
+  }
+});
+
+el('sec-filters').addEventListener('submit', (e) => { e.preventDefault(); loadSecurity(); });
+el('sec-clear').addEventListener('click', () => { el('sec-filters').reset(); loadSecurity(); });
+el('sec-recent').addEventListener('click', () => loadSecurity());
+el('sec-next').addEventListener('click', () => { if (securityNext) loadSecurity(securityNext); });
+
 const CEN_CLASSES = ['visitor', 'ai', 'search', 'tool', 'scanner', 'unknown'];
 
 /* What a screen is called on the panel: the address it answers at, with the
@@ -729,6 +949,8 @@ const FAMILIES = ['u', 'cat', 'blog', 'site'];
 /* The last payload, kept so that changing the kind of caller redraws what is
    already here instead of asking the server for the same fortnight again. */
 let census = null;
+let censusVersion = 0;
+let censusResetting = false;
 
 function barRow(label, value, max, conf) {
   // A floor of 2%, so a count of one is a visible mark rather than an empty
@@ -807,16 +1029,24 @@ function renderScreens() {
 el('cen-screen-class').addEventListener('change', renderScreens);
 
 async function loadCensus() {
+  if (censusResetting) return;
+  const version = ++censusVersion;
   let d;
   try {
     d = await api('/census', auth());
   } catch (e) {
+    if (version !== censusVersion) return;
     el('cen-empty').hidden = false;
     el('cen-empty').textContent = e.message;
     // Sem marcar a hora: a idade no rótulo continua crescendo, que é o que
     // diz a verdade sobre o que está na tela.
     return;
   }
+  if (version !== censusVersion) return;
+  renderCensus(d);
+}
+
+function renderCensus(d) {
 
   // The one failure the panel has to shout about: with no seed set, every
   // restart forgets who came back, so the whole recurring half is fiction.
@@ -871,6 +1101,26 @@ async function loadCensus() {
   el('cen-history-n').textContent = String((d.history || []).length);
 }
 
+el('cen-reset').addEventListener('click', async () => {
+  if (censusResetting || !confirm(t('adm.cen_reset_confirm'))) return;
+  censusResetting = true;
+  ++censusVersion;
+  el('cen-reset').disabled = true;
+  el('cen-reset-note').textContent = '';
+  el('cen-reset-error').hidden = true;
+  try {
+    renderCensus(await post('/census/reset', {}, auth()));
+    el('cen-reset-note').textContent = t('adm.cen_reset_done');
+    paintLive();
+  } catch (e) {
+    el('cen-reset-error').textContent = e.message;
+    el('cen-reset-error').hidden = false;
+  } finally {
+    censusResetting = false;
+    el('cen-reset').disabled = false;
+  }
+});
+
 /* ── Ao vivo ───────────────────────────────────────────────────────────
    O painel relê sozinho o que está na tela. Três regras, e as três existem
    porque a alternativa já foi tentada em algum lugar e dá errado:
@@ -893,8 +1143,8 @@ async function loadCensus() {
    recarrega sozinho é editor que come texto. */
 const LIVE_KEY = 'sp-adm-live';
 const LIVE_TICK = 5000;
-const LIVE_EVERY = { inbox: 60000, census: 30000 };
-const seenAt = { inbox: 0, census: 0 };
+const LIVE_EVERY = { inbox: 60000, census: 30000, security: 30000 };
+const seenAt = { inbox: 0, census: 0, security: 0 };
 let liveOn = true;
 let reading = false;
 
@@ -928,8 +1178,8 @@ function paintLive() {
     return;
   }
   const view = viewNow();
-  const key = view === 'census' ? 'census' : 'inbox';
-  if (busyIn(view === 'census' ? 'view-census' : 'view-mail')) {
+  const key = ['census', 'security'].includes(view) ? view : 'inbox';
+  if (busyIn(['census', 'security'].includes(view) ? `view-${view}` : 'view-mail')) {
     note.textContent = t('adm.live_hold');
     return;
   }
@@ -949,6 +1199,9 @@ async function liveTick() {
   // aba: é o que mantém os selos honestos enquanto você olha outra coisa.
   if (now - seenAt.inbox >= LIVE_EVERY.inbox && !busyIn('view-mail')) jobs.push(load);
   if (viewNow() === 'census' && now - seenAt.census >= LIVE_EVERY.census) jobs.push(loadCensus);
+  if (viewNow() === 'security' && !securityBefore && !busyIn('view-security')
+      && !el('view-security').querySelector('details[open]')
+      && now - seenAt.security >= LIVE_EVERY.security) jobs.push(loadSecurity);
   if (!jobs.length) return;
   reading = true;
   el('live-bar').dataset.reading = '1';
@@ -1136,6 +1389,7 @@ el('logout').addEventListener('click', async () => {
 
 applyStatic();
 langSwitchInto(el('langs'));
+try { el('sec-hide-actor').value = localStorage.getItem('steamprofiler.security.hidden') || ''; } catch { /* private storage */ }
 
 /* A reload inside the session window lands straight in the inbox. */
 api('/me').then((me) => {

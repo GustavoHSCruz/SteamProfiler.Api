@@ -59,6 +59,10 @@ exporta() {
     log "$nome: árvore de trabalho (--local)"
     rsync -a --exclude '.git/' --exclude '__pycache__/' --exclude 'data/' \
           --exclude 'site/' "$repo/" "$destino/" || morre "$nome: cópia local falhou"
+    # O export local ainda passa pela mesma auditoria do export versionado.
+    # Ela usa `git ls-files` para enumerar o pacote, então preservamos apenas
+    # o metadado Git no diretório temporário; ele nunca entra no rsync abaixo.
+    cp -a "$repo/.git" "$destino/.git" || morre "$nome: metadado Git não copiado"
     # O front é o único cujo site/ importa, e o exclude acima o tirou.
     [ "$nome" = "front" ] && rsync -a --exclude '.git/' "$repo/site/" "$destino/site/"
     return 0
@@ -180,6 +184,7 @@ API_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
   --exclude '.env' --exclude '.env.bak-*' --exclude 'data/' \
   --exclude '__pycache__/' --exclude '.git' --exclude 'site/' --exclude 'next/' \
   --exclude 'ollama-bridge/' --exclude 'deploy.sh' --exclude 'watch.py' \
+  --exclude 'proxy-trust/' \
   "$TMP/api/" "$REMOTO:$DESTINO/")" || morre "api: rsync falhou"
 
 FRONT_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' --exclude '.git' \
@@ -252,12 +257,17 @@ recria() { # <serviço> <motivo>
   # (`build: context: .`), não montado. Recriar sem reconstruir sobe o
   # container novo com o código velho: em 11/09/2026 o painel continuou
   # servindo o admin.js quebrado depois do conserto já estar no disco.
-  ssh "$REMOTO" "cd $DESTINO && docker compose up -d --build --force-recreate $1" 2>&1 \
+  dependencias=""
+  [ "$1" = api ] || dependencias="--no-deps"
+  ssh "$REMOTO" "cd $DESTINO && docker compose up -d --build --force-recreate $dependencias $1" 2>&1 \
     | sed 's/^/          /' \
     || morre "$1: não subiu"
 }
 
 [ "$NEEDS_API" -eq 1 ]   && recria api   "python mudou"
+[ "$NEEDS_API" -eq 1 ] && if ! ssh "$REMOTO" "cd $DESTINO && for _ in \$(seq 1 30); do docker compose exec -T api python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\", timeout=3)' >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then
+  morre "api: healthz não voltou antes de recriar o web"
+fi
 [ "$NEEDS_WEB" -eq 1 ]   && recria web   "nginx.conf mudou"
 [ "$NEEDS_ADMIN" -eq 1 ] && recria admin "admin mudou"
 

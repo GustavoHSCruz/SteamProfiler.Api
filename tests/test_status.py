@@ -62,6 +62,7 @@ class PublicStatusTest(unittest.TestCase):
         # this size, some weeks, is one person's afternoon.
         "screens", "screen_days", "screen_games", "screen_window_days",
         "pending_views",
+        "actor", "uri", "ua", "signals", "duration_ms", "security",
         "tracked", "blocked", "denied", "bans", "appeals", "exempt_local",
         "ephemeral", "pending_subjects",
         "steam_calls_today", "budget_calls", "BUDGET",

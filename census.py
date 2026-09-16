@@ -157,7 +157,8 @@ TOOL_UA = re.compile(
     r"okhttp|java/|libwww|node-fetch|axios|guzzle|postman|insomnia|"
     r"headlesschrome|phantomjs|puppeteer|playwright|selenium|"
     r"dataprovider|builtwith|checkmarknetwork|pathscan|masscan|zgrab|nuclei|"
-    r"uptime|monitor|statuscake|pingdom|steamprofiler-dev-server", re.I)
+    r"uptime|monitor|statuscake|pingdom|steamprofiler-dev-server|"
+    r"bot\b|crawler|spider|scrapy", re.I)
 
 # A request for one of these is not a reader taking a wrong turn. bans.py
 # already answers them with two days; this only needs to label them, so the
@@ -281,6 +282,7 @@ CLASSES = ("visitor", "ai", "search", "tool", "scanner", "unknown")
 CONFIDENCES = ("declared", "likely", "unsure")
 
 _lock = threading.Lock()
+_write_lock = threading.Lock()
 _slots = {}
 _subjects = {}
 _started = False
@@ -593,6 +595,24 @@ def _evict_locked(now):
 def flush():
     """Write the dirty slots and the day's subject counts, then rotate if the
     epoch turned. Returns what it wrote, for /healthz."""
+    # A reset must wait for snapshots already being written, so an older
+    # flush cannot restore the counts after they have been cleared.
+    with _write_lock:
+        return _flush()
+
+
+def reset():
+    """Clear the full traffic history and pending counts; keep collecting."""
+    with _write_lock, _lock:
+        with _connect() as con:
+            for table in ("visitors", "subjects", "epochs", "screens", "screen_games"):
+                con.execute(f"DELETE FROM {table}")
+        # Clear memory only after the transaction succeeds.
+        _slots.clear()
+        _subjects.clear()
+
+
+def _flush():
     global _flushes
     now = time.time()
     with _lock:

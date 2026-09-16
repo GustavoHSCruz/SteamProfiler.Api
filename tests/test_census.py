@@ -23,7 +23,9 @@ behaviour is the easy half.
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import api
 import census
 
 BROWSER = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -183,6 +185,68 @@ class ScreenCountTest(unittest.TestCase):
                 self.assertNotIn("steamid", columns)
                 self.assertNotIn("country", columns)
                 self.assertNotIn("region", columns)
+
+    def test_reset_clears_history_disk_and_pending_counts(self):
+        # A finished window as well as the current window must disappear.
+        with patch.object(census.time, "time", return_value=(census.epoch_of() - 1) * census.EPOCH):
+            self.visit("198.51.100.8", "/blog")
+            census.flush()
+        self.visit("198.51.100.7", "/g/440")
+        census.subject("76561198000000001")
+        census.flush()
+        self.assertTrue(census.report()["history"])
+        self.visit("198.51.100.9", "/u/example/cards")
+        census.subject("76561198000000002")
+
+        census.reset()
+        census.flush()
+
+        report = census.report()
+        for key in ("seen", "returning", "hits", "live"):
+            self.assertEqual(report[key], 0, key)
+        for key in ("history", "subjects", "screens", "screen_games"):
+            self.assertEqual(report[key], [], key)
+        with census._connect() as con:
+            for table in ("visitors", "subjects", "epochs", "screens", "screen_games"):
+                self.assertEqual(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0)
+
+    def test_reset_keeps_counting_even_for_the_same_visitor_and_screen(self):
+        self.visit("198.51.100.7", "/g/440")
+        census.flush()
+        census.reset()
+        self.visit("198.51.100.7", "/g/440")
+        census.subject("76561198000000001")
+        census.flush()
+
+        report = census.report()
+        self.assertEqual(report["seen"], 1)
+        self.assertEqual(self.counts(), {"cat.game": 1})
+        self.assertEqual(report["subject_totals"][0]["hits"], 1)
+
+
+class ResetEndpointTest(unittest.TestCase):
+    def handler(self, token):
+        handler = object.__new__(api.Handler)
+        handler.path = "/admin/census/reset"
+        handler.headers = {"Authorization": f"Bearer {token}"}
+        handler.read_json = lambda: {}
+        handler.send_json = lambda status, body: (status, body)
+        return handler
+
+    def test_reset_requires_admin_and_accepts_a_body_without_an_id(self):
+        with patch.object(api, "ADMIN_TOKEN", "test-admin-token"), \
+                patch.object(census, "reset") as reset, \
+                patch.object(api, "do_census", return_value={"seen": 0}) as report:
+            handler = self.handler("wrong-token")
+            responses = []
+            handler.send_json = lambda status, body: responses.append((status, body))
+            handler.do_POST()
+            self.assertEqual(responses[0][0], 401)
+            reset.assert_not_called()
+            report.assert_not_called()
+
+            self.assertEqual(self.handler("test-admin-token").do_POST(), (200, {"seen": 0}))
+            reset.assert_called_once_with()
 
 
 if __name__ == "__main__":

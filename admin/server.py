@@ -29,6 +29,7 @@ import sys
 import time
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -495,6 +496,16 @@ class Handler(BaseHTTPRequestHandler):
             code, body = call_api("/admin/census")
             return self.send_json(code, body)
 
+        if path in ("/api/security", "/api/security/screens"):
+            if not session_of(self):
+                return self.send_json(401, {"error": "sign in first"})
+            # Only forward the filters, never arbitrary destinations or tokens.
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            filters = {key: query[key][0] for key in ("kind", "actor", "status", "q", "before", "visit", "unassigned", "exclude") if query.get(key)}
+            destination = "/admin/security/screens" if path.endswith("/screens") else "/admin/security"
+            code, body = call_api(destination + "?" + urllib.parse.urlencode(filters))
+            return self.send_json(code, body)
+
         # Every post, drafts included. The public site can only ever see the
         # published ones, and that is decided in blog.py rather than here: this
         # process forwards, it does not filter.
@@ -583,6 +594,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"ok": True})
 
         # ── Lock 3: the token, added on the way out ──────────────────
+        if path == "/api/security/reset":
+            code, body = call_api("/admin/security/reset", payload)
+            return self.send_json(code, body)
+        if path == "/api/security/block":
+            code, body = call_api("/admin/security/block", payload)
+            return self.send_json(code, body)
+
+        if path == "/api/census/reset":
+            code, body = call_api("/admin/census/reset", payload)
+            return self.send_json(code, body)
+
         if path == "/api/update":
             code, body = call_api("/admin/update", payload)
             return self.send_json(code, body)

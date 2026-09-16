@@ -28,6 +28,7 @@ looked up by one from outside this server, and dies with the salt.
 
 import json
 import os
+import re
 import sqlite3
 import sys
 import threading
@@ -202,11 +203,23 @@ def ban(address, seconds=None, reason="trap", path=None):
     # on this network.
     if guard_private(address):
         return None
+    return ban_hash(store.ip_hash(address), seconds=seconds, reason=reason, path=path)
+
+
+def ban_hash(ip_hash, seconds=None, reason="admin", path=None):
+    """Shut out a salted address identifier already held by the owner panel.
+
+    The security history deliberately keeps only this identifier. Accepting it
+    here lets the owner act on a row without ever recovering or displaying the
+    raw address.
+    """
+    who = str(ip_hash or "").strip()
+    if not re.fullmatch(r"[a-f0-9]{8,64}", who):
+        raise ValueError("invalid ip hash")
     seconds = BAN_FOR if seconds is None else int(seconds)
-    who = store.ip_hash(address)
     now = _now()
     stamp = now + seconds
-    path = (path or "")[:200] or None
+    path = str(path or "")[:200] or None
 
     live = _active.get(who)
     seen = _probe.setdefault(who, set())
