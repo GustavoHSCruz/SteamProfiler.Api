@@ -190,4 +190,69 @@ for agent in ALLOWED:
     except urllib.error.HTTPError as exc:
         raise AssertionError((agent, exc.code, 'a wanted agent was refused'))
 print(f'allowed: {len(ALLOWED)} search, assistant, unfurler and human agents still get in')
+
+# Browsers below the front's build target: refused on every path, the health
+# check and the home included, with the page that says why, and without the
+# gate or the api ever hearing about it.
+before = upstream_count()
+OLD = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.5481.77 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.19582',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:113.0) Gecko/20100101 Firefox/113.0',
+    'Mozilla/5.0 (Windows NT 6.1; rv:52.0) Gecko/20100101 Firefox/52.0',
+    'Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko',
+    'Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1)',
+    'Opera/9.80 (Windows NT 6.1) Presto/2.12.388 Version/12.18',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.1 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Safari/605.1.15',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (iPad; CPU OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; U; Android 4.1.2; en-us; GT-I9100 Build/JZO54K) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30',
+)
+for agent in OLD:
+    for path in ('/', '/healthz', '/about.html', '/g/440', '/api/probe', '/style.css',
+                 '/favicon.svg', '/art/440.jpg', '/robots.txt', '/_old_browser'):
+        request = urllib.request.Request(sys.argv[1] + path, headers={'User-Agent': agent})
+        try:
+            urllib.request.urlopen(request, timeout=3)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            assert exc.code == 403, (agent, path, exc.code)
+            assert 'Update your browser' in body, (agent, path, body[:200])
+            assert exc.headers.get_content_type() == 'text/html', (agent, path, exc.headers)
+        else:
+            raise AssertionError((agent, path, 'an old browser obtained access'))
+assert upstream_count() == before, 'Old browser requests reached the upstream API'
+
+CURRENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.0.0 Mobile/15E148 Safari/604.1',
+    # Android WebView: Version/4.0, and Chrome after it.
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
+    # Crawlers that name themselves on an old engine, in their full shapes.
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/100.0.4896.127 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.10; rv:38.0) Gecko/20100101 Firefox/38.0 (Discordbot)',
+    # Not a browser at all: the container healthcheck and the deploy wait.
+    'Wget', 'curl/8.0', 'Python-urllib/3.13',
+)
+for agent in CURRENT:
+    for path in ('/about.html', '/healthz'):
+        request = urllib.request.Request(sys.argv[1] + path, headers={'User-Agent': agent})
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:
+                assert response.status == 200, (agent, path, response.status)
+        except urllib.error.HTTPError as exc:
+            raise AssertionError((agent, path, exc.code, 'a current browser was refused'))
+print(f'old browsers: {len(OLD)} refused on every path with zero upstream requests; '
+      f'{len(CURRENT)} current browsers, named crawlers and tools still get in')
 PY
