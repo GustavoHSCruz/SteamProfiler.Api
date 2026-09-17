@@ -284,6 +284,12 @@ SESSION_HOURS = 12
 SESSION_COOKIE = "sp_admin"
 _sessions = {}          # id -> {"user":…, "until":…}
 
+# What the editor held when "preview" was pressed, by a random id. In memory
+# and only the last few: a preview is looked at and then thrown away, and the
+# post itself is saved through the normal route or not at all.
+PREVIEW_KEEP = 20
+_previews = {}          # id -> the editor payload
+
 # scrypt at these parameters costs ~100ms and 128*n*r = 32MB per attempt: nothing
 # for one person signing in, a wall for anyone working through a list.
 #
@@ -377,7 +383,9 @@ def session_of(handler):
 
 MIME = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
-        ".woff2": "font/woff2", ".json": "application/json"}
+        ".woff2": "font/woff2", ".json": "application/json",
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -515,6 +523,43 @@ class Handler(BaseHTTPRequestHandler):
             code, body = call_api("/admin/blog")
             return self.send_json(code, body)
 
+        # The preview. The page is the site's own post.html and post.js, served
+        # from the same copy of the front the panel already borrows its styles
+        # from, so it cannot drift from what a reader gets. post.js reads the
+        # id off the path and asks /api/blog/post for it; here that question is
+        # answered by the api drawing the editor's text instead of a saved row.
+        preview = re.fullmatch(r"/blog/([A-Za-z0-9_-]{16,64})(?:/[^/]*)?", path)
+        if preview:
+            if not session_of(self):
+                return self.send_json(401, {"error": "sign in first"})
+            return self.send_file(SITE / "post.html")
+        if path == "/api/blog/post":
+            if not session_of(self):
+                return self.send_json(401, {"error": "sign in first"})
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            key = (query.get("key") or [""])[0]
+            payload = _previews.get(key)
+            if payload is None:
+                return self.send_json(404, {"error": "@err.no_post"})
+            code, body = call_api("/admin/blog/preview",
+                                  {**payload, "lang": (query.get("lang") or ["en"])[0]})
+            if code == 200:
+                # Where the page already is, so post.js leaves the address alone.
+                body["url"] = f"/blog/{key}"
+            return self.send_json(code, body)
+        # The footer's credit, answered from the site's api like on the site.
+        if path == "/api/owner":
+            code, body = call_api("/owner")
+            return self.send_json(code, body)
+        # The post's pictures live under blog-img/ in the front, one level down,
+        # which the shared-asset rule below does not reach.
+        if path.startswith("/blog-img/"):
+            base = (SITE / "blog-img").resolve()
+            candidate = (base / path[len("/blog-img/"):]).resolve()
+            if candidate.is_file() and str(candidate).startswith(str(base) + os.sep):
+                return self.send_file(candidate)
+            return self.send_json(404, {"error": "not found"})
+
         # The dictionary is one file per language, and /dict.js is whichever one
         # this reader asked for. nginx does this for the site with a map on the
         # cookie; the panel has its own server, so it does its own three steps,
@@ -629,6 +674,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/blog/delete":
             code, body = call_api("/admin/blog/delete", payload)
             return self.send_json(code, body)
+
+        # Kept only if the api accepts it, so a half-written post is refused in
+        # the editor, where it can be fixed, and not on a blank preview tab.
+        if path == "/api/blog/preview":
+            code, body = call_api("/admin/blog/preview",
+                                  {**payload, "lang": payload.get("origin")})
+            if code != 200:
+                return self.send_json(code, body)
+            key = secrets.token_urlsafe(18)
+            _previews[key] = payload
+            while len(_previews) > PREVIEW_KEEP:
+                _previews.pop(next(iter(_previews)))
+            return self.send_json(200, {"url": f"/blog/{key}"})
+        # The vote button is part of the page being previewed. It counts nothing.
+        if path == "/api/blog/vote":
+            return self.send_json(200, {"votes": 0, "voted": False})
 
         # The one route that does not touch the api container at all: it takes
         # text from the editor, sends it to the machine on the desk, and hands

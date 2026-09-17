@@ -709,6 +709,43 @@ def save(post_id, slug, status, origin, tags, texts):
             "url": path_of(pid, (texts.get(origin) or {}).get("slug"))}
 
 
+def draft_view(origin, tags, texts, lang="en"):
+    """What one() would answer for the text in the editor, before any save.
+
+    For the panel's preview, which draws it with the site's own post page. It
+    runs the same cleaning and the same language pick as a saved post, so what
+    the preview shows is what the reader will get, and nothing is written."""
+    if origin not in LANGS:
+        raise store.Rejected("@err.bad_lang")
+    texts = _clean_texts(texts)
+    if origin not in texts:
+        raise store.Rejected("@err.origin_missing")
+    row = {"tags": texts[origin]["tags"] or _clean_tags(tags)}
+    text, served = _pick(texts, lang if lang in LANGS else "en", origin)
+    now = _now()
+    return {
+        "pid": "preview",
+        "url": None,
+        "urls": {},
+        "slug": text["slug"],
+        "title": text["title"],
+        "lede": (text["lede"] or "").strip() or None,
+        "body": text["body"],
+        "tags": _tags_of(row, text),
+        "published_at": now,
+        "updated_at": now,
+        "lang": served,
+        "origin": origin,
+        "langs": sorted(texts),
+        "translated": served == lang,
+        "machine": bool(text["machine"]),
+        "votes": 0,
+        "voted": False,
+        "prev": None,
+        "next": None,
+    }
+
+
 def remove(post_id):
     with _lock, _connect() as con:
         cur = con.execute("DELETE FROM posts WHERE id = ?", (post_id,))

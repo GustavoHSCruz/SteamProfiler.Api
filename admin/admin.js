@@ -624,13 +624,8 @@ el('b-slugs').addEventListener('click', writeSlugs);
 el('b-new').addEventListener('click', () => fillEditor(null));
 fillEditor(null);
 
-el('blog-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  el('b-error').hidden = true;
-  el('b-note').textContent = '';
-  const save = el('b-save');
-  save.disabled = true;
-
+/** Every language as it stands in the editor, saved or not. */
+function editorTexts() {
   const texts = {};
   for (const lang of BLOG_LANGS) {
     texts[lang] = {
@@ -642,6 +637,40 @@ el('blog-form').addEventListener('submit', async (e) => {
       machine: el(`b-machine-${lang}`).checked,
     };
   }
+  return texts;
+}
+
+/* The preview is the site's own post page, served by this panel with the
+   editor's text in place of a saved post, so nothing has to be saved first.
+   The tab is opened before the request and pointed afterwards: a window.open
+   that waits for a fetch is a popup, and browsers block those. It shows the
+   post in the panel's language, like a reader in that language would see it,
+   and the language picker on the page switches it. */
+el('b-preview').addEventListener('click', async () => {
+  el('b-error').hidden = true;
+  const tab = window.open('', '_blank');
+  try {
+    const got = await post('/blog/preview', {
+      origin: el('b-origin').value,
+      texts: editorTexts(),
+    }, auth());
+    if (tab) tab.location.href = got.url;
+    else window.open(got.url, '_blank');
+  } catch (err) {
+    if (tab) tab.close();
+    el('b-error').hidden = false;
+    el('b-error').textContent = err.message;
+  }
+});
+
+el('blog-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  el('b-error').hidden = true;
+  el('b-note').textContent = '';
+  const save = el('b-save');
+  save.disabled = true;
+
+  const texts = editorTexts();
 
   try {
     const saved = await post('/blog/save', {

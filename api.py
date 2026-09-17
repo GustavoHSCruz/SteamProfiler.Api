@@ -2186,6 +2186,14 @@ class Handler(BaseHTTPRequestHandler):
                     raw if isinstance(raw, int) else None,
                     body.get("slug"), body.get("status"), body.get("origin"),
                     body.get("tags"), body.get("texts")))
+            # The same text as a save, drawn and not written. Same ceiling and
+            # the token first, for the same reason as the route above.
+            if url.path == "/admin/blog/preview":
+                self.require_admin()
+                body = self.read_json(MAX_POST_BODY)
+                return self.send_json(200, blog.draft_view(
+                    body.get("origin"), body.get("tags"), body.get("texts"),
+                    self.lang(body.get("lang"))))
             body = self.read_json()
             if url.path in ("/feedback", "/vote", "/blog/vote"):
                 # These have their own defences - a honeypot, a clock and a
