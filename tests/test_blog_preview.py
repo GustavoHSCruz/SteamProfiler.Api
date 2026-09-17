@@ -46,6 +46,14 @@ class DraftView(unittest.TestCase):
         with self.assertRaises(store.Rejected):
             blog.draft_view("en", "", self.texts(), "en")
 
+    def test_the_cover_can_live_on_the_cdn_and_nowhere_else(self):
+        cdn = "https://cdn.steamprofiler.org/blog/capa.png"
+        self.assertEqual(blog._image(f"![capa]({cdn})\n\ntexto"), (cdn, "capa"))
+        self.assertEqual(blog._image("![capa](/blog-img/capa.png)"), ("/blog-img/capa.png", "capa"))
+        for other in ("https://example.com/capa.png", "//cdn.steamprofiler.org/capa.png",
+                      "https://cdn.steamprofiler.org.example.com/capa.png"):
+            self.assertIsNone(blog._image(f"![capa]({other})"), other)
+
     def test_nothing_is_written(self):
         blog.draft_view("pt", "", self.texts(), "pt")
         self.assertFalse(blog.DB_PATH.exists())

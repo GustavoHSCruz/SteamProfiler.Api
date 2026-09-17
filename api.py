@@ -1249,10 +1249,12 @@ class Handler(BaseHTTPRequestHandler):
             # a card is drawn from; a post without one falls through to that.
             if card.get("image"):
                 path, alt = card["image"]
+                # A CDN picture is already an absolute address.
+                src = path if path.startswith(blog.CDN) else base + path
                 tags += [
-                    f'<meta property="og:image" content="{esc(base + path)}">',
+                    f'<meta property="og:image" content="{esc(src)}">',
                     f'<meta property="og:image:alt" content="{esc(alt)}">',
-                    f'<meta name="twitter:image" content="{esc(base + path)}">',
+                    f'<meta name="twitter:image" content="{esc(src)}">',
                 ]
             # x-default points at the original: a reader whose language is none
             # of the three gets the version somebody actually wrote, which is

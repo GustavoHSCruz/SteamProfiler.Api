@@ -263,10 +263,14 @@ def _pick(texts, want, origin):
 
 
 # An image is a line of its own, `![what it shows](/path)`, and the path is
-# this site's: post.js draws nothing else, because the page's img-src is 'self'
-# and a picture hosted elsewhere is a request to a third party on every read.
-# `//host` is refused for the same reason - it is a same-looking absolute URL.
-IMAGE_RE = re.compile(r"^!\[([^\]\n]*)\]\((/(?!/)[^)\s]*)\)\s*$", re.M)
+# this site's or its CDN's: post.js draws nothing else, because the page's
+# img-src is 'self' plus that one host, and a picture hosted anywhere else is a
+# request to a third party on every read. `//host` is refused for the same
+# reason - it is a same-looking absolute URL. The post pictures live on the CDN
+# and not in the front's repository, which is public and keeps every version of
+# every file it was ever given.
+CDN = "https://cdn.steamprofiler.org/"
+IMAGE_RE = re.compile(r"^!\[([^\]\n]*)\]\(((?:/(?!/)|https://cdn\.steamprofiler\.org/)[^)\s]*)\)\s*$", re.M)
 
 
 def _image(body):
