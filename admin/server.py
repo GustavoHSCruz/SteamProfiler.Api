@@ -551,14 +551,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/owner":
             code, body = call_api("/owner")
             return self.send_json(code, body)
-        # The post's pictures live under blog-img/ in the front, one level down,
-        # which the shared-asset rule below does not reach.
-        if path.startswith("/blog-img/"):
-            base = (SITE / "blog-img").resolve()
-            candidate = (base / path[len("/blog-img/"):]).resolve()
-            if candidate.is_file() and str(candidate).startswith(str(base) + os.sep):
-                return self.send_file(candidate)
-            return self.send_json(404, {"error": "not found"})
+        # The post's pictures are not served here: they live on the CDN, and
+        # the preview loads them from there exactly as a reader's browser does.
 
         # The dictionary is one file per language, and /dict.js is whichever one
         # this reader asked for. nginx does this for the site with a map on the
