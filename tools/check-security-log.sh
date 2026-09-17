@@ -67,8 +67,10 @@ curl -sS -o /dev/null -A 'curl/8.0' -H 'CF-IPCountry: BR' \
   --data 'password=body-secret' "http://127.0.0.1:$PORT/api/probe?token=query-secret&appid=440"
 # The trap forces GET upstream and redirects to a static error page. The
 # security event must still describe the client's original POST and final 403.
-curl -sS -o /dev/null -A 'Mozilla/5.0' --data 'password=body-secret' "http://127.0.0.1:$PORT/.env"
-curl -sS -o /dev/null -A 'Mozilla/5.0' "http://127.0.0.1:$PORT/api/execution-test?cmd=system%28id%29"
+# A scanner's own agent, not a bare `Mozilla/5.0`: that one claims to be a
+# browser and proves nothing, so the old-browser door refuses it before the trap.
+curl -sS -o /dev/null -A 'python-requests/2.32' --data 'password=body-secret' "http://127.0.0.1:$PORT/.env"
+curl -sS -o /dev/null -A 'python-requests/2.32' "http://127.0.0.1:$PORT/api/execution-test?cmd=system%28id%29"
 docker exec -i "$GATE" python - <<'PY'
 import json
 import time
@@ -210,6 +212,21 @@ OLD = (
     'Mozilla/5.0 (iPhone; CPU iPhone OS 16_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Mobile/15E148 Safari/604.1',
     'Mozilla/5.0 (iPad; CPU OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1',
     'Mozilla/5.0 (Linux; U; Android 4.1.2; en-us; GT-I9100 Build/JZO54K) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30',
+    'Mozilla/5.0 (Linux; Android 4.4.2; SM-G900F Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Mobile Safari/537.36',
+    # The phones that never said Mozilla. The first is the one that got in.
+    'SonyEricssonK550i/R1JD Browser/NetFront/3.3 Profile/MIDP-2.0 Configuration/CLDC-1.1',
+    'Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1',
+    'NokiaN95/21.0.016; Profile/MIDP-2.0 Configuration/CLDC-1.1 Series60/3.1',
+    'BlackBerry9700/5.0.0.862 Profile/MIDP-2.1 Configuration/CLDC-1.1 VendorID/331',
+    'Opera/9.80 (J2ME/MIDP; Opera Mini/9.80 (S60; SymbOS; Opera Mobi/23.348; U; en) Presto/2.5.25 Version/10.54',
+    'SAMSUNG-SGH-E250/1.0 Profile/MIDP-2.0 Configuration/CLDC-1.1 UP.Browser/6.2.3.3.c.1.101 (GUI) MMP/2.0',
+    'LG-KU990 Obigo/WAP2.0 Profile/MIDP-2.0 Configuration/CLDC-1.1',
+    'Mozilla/5.0 (compatible; MSIE 10.0; Windows Phone 8.0; Trident/6.0; IEMobile/10.0; ARM; Touch; NOKIA; Lumia 920)',
+    'Mozilla/5.0 (Mobile; Nokia_8110_4G; rv:48.0) Gecko/48.0 Firefox/48.0 KAIOS/2.5',
+    'Mozilla/5.0 (Nintendo 3DS; U; ; en) Version/1.7412.EU',
+    # Claims to be a browser and shows no engine at all.
+    'Mozilla/5.0', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'Mozilla/5.0 (X11; Linux) KHTML/4.9.1 (like Gecko) Konqueror/4.9',
 )
 for agent in OLD:
     for path in ('/', '/healthz', '/about.html', '/g/440', '/api/probe', '/style.css',
@@ -242,6 +259,16 @@ CURRENT = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
     'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/100.0.4896.127 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.10; rv:38.0) Gecko/20100101 Firefox/38.0 (Discordbot)',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.118 Safari/537.36 (compatible; Google-Read-Aloud; +https://support.google.com/webmasters/answer/1061943)',
+    'Mozilla/5.0 (compatible; Bluesky Cardyb/1.1; +mailto:support@bsky.app)',
+    # The brands step 3 names, today: Android phones on a current Chrome.
+    'Mozilla/5.0 (Linux; Android 13; Nokia G21) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 14; LG-H870) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    # The floor itself, which is in.
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.0.0 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:114.0) Gecko/20100101 Firefox/114.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 Epiphany/605.1.15',
+    'Lynx/2.9.0 libwww-FM/2.14 SSL-MM/1.4.1 OpenSSL/3.0.2',
     # Not a browser at all: the container healthcheck and the deploy wait.
     'Wget', 'curl/8.0', 'Python-urllib/3.13',
 )
