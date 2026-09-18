@@ -101,6 +101,20 @@ class ReputationTest(unittest.TestCase):
         pts = lambda r: next(s for s in r["signals"] if s["key"] == "variety")["points"]
         self.assertLess(pts(narrow), pts(broad) / 2)
 
+    def test_the_level_is_read_as_a_percentile(self):
+        """Level 24 is above 97% of Steam, and the signal says so."""
+        got = rep.score(payload(profile={"level": 24, "level_percentile": 97.38}))
+        row = next(s for s in got["signals"] if s["key"] == "level")
+        self.assertEqual(row["score"], 97)
+
+    def test_every_known_signal_has_its_own_score(self):
+        got = rep.score(payload(profile={"friends": None}), None)
+        for s in got["signals"]:
+            if s["points"] is None:
+                self.assertIsNone(s["score"])
+            else:
+                self.assertTrue(0 <= s["score"] <= 100)
+
     def test_the_default_avatar_is_not_a_chosen_one(self):
         got = rep.score(payload(profile={"avatar": f"https://x/{rep.DEFAULT_AVATAR}_full.jpg"}))
         row = next(s for s in got["signals"] if s["key"] == "profile")

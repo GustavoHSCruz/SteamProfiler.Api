@@ -52,6 +52,7 @@ class ScreenMapTest(unittest.TestCase):
             ("/u/gordziilla/deck", "u.deck"),
             ("/u/gordziilla/embed", "u.embed"),
             ("/u/gordziilla/ids", "u.ids"),
+            ("/u/gordziilla/rep", "u.rep"),
             ("/g/440", "cat.game"),
             ("/franchises", "cat.franchises"),
             ("/franchises/half-life", "cat.franchise"),

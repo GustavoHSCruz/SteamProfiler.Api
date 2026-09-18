@@ -235,6 +235,7 @@ SCREENS = (
     (re.compile(r"^/u/[^/]+/deck/?$"), "u.deck", None),
     (re.compile(r"^/u/[^/]+/embed/?$"), "u.embed", None),
     (re.compile(r"^/u/[^/]+/ids/?$"), "u.ids", None),
+    (re.compile(r"^/u/[^/]+/rep/?$"), "u.rep", None),
     # The catalogue: the same shelves with nobody's library on them.
     (re.compile(r"^/g/(\d{1,8})/?$"), "cat.game", "appid"),
     (re.compile(r"^/franchises/?$"), "cat.franchises", None),

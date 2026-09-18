@@ -950,6 +950,7 @@ const SCREEN_PATHS = {
   'u.deck': '/u/…/deck',
   'u.embed': '/u/…/embed',
   'u.ids': '/u/…/ids',
+  'u.rep': '/u/…/rep',
   'cat.game': '/g/<appid>',
   'cat.franchises': '/franchises',
   'cat.franchise': '/franchises/<slug>',

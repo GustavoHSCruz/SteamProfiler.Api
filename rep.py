@@ -32,7 +32,7 @@ them do, so a number can always be read against the rules that made it.
 
 import math
 
-VERSION = 1
+VERSION = 2
 
 # Steam's placeholder, the question mark on a blue square. Every account that
 # never chose a picture has this exact hash in its avatar URL.
@@ -143,8 +143,18 @@ def score(p, friend_bans=None):
     limited = pf.get("limited")
     got["limited"] = (None if limited is None else (0.0 if limited else 1.0), limited)
 
+    # Where the level sits against every other account, which Steam
+    # publishes per level. A curve of our own made level 24 worth 70% when
+    # it is above 97% of Steam; the percentile is the scale the level
+    # actually lives on. Level 0 has no percentile and is worth nothing.
     level = pf.get("level")
-    got["level"] = (None if level is None else sat(level, 100), level)
+    pct = pf.get("level_percentile")
+    if level is None:
+        got["level"] = (None, None)
+    elif pct is not None:
+        got["level"] = (min(1.0, pct / 100), level)
+    else:
+        got["level"] = (0.0 if level == 0 else sat(level, 100), level)
 
     if friend_bans and (friend_bans.get("sampled") or 0) >= FRIEND_BAN_MIN:
         share = friend_bans["flagged"] / friend_bans["sampled"]
@@ -197,10 +207,14 @@ def score(p, friend_bans=None):
     signals, points, known = [], 0.0, 0
     for key, weight in WEIGHTS.items():
         frac, value = got[key]
+        # `score` is the signal on its own, 0 to 100, which is what the page
+        # shows. The weight is how much of the total it moves, and stays
+        # in the payload for anyone reading the arithmetic.
         row = {"key": key, "weight": weight, "value": value}
         if frac is None:
-            row["points"] = None
+            row["score"] = row["points"] = None
         else:
+            row["score"] = round(frac * 100)
             row["points"] = round(weight * frac, 1)
             points += weight * frac
             known += weight
