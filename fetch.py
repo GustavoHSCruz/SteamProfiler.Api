@@ -32,6 +32,7 @@ import community
 import fx
 import inv
 import meta
+import rep
 
 API = "https://api.steampowered.com"
 OPENDOTA = "https://api.opendota.com/api"
@@ -2796,6 +2797,20 @@ def build_friends():
         for p in (got or {}).get("players") or []:
             people[p["steamid"]] = p
 
+    # How many of these same friends carry a VAC or game ban, for rep.py. One
+    # call per hundred, the same ids the summaries above were asked for, and
+    # only the count survives: which friend it was is somebody else's record,
+    # and this page is not about them.
+    sampled = flagged = 0
+    for start in range(0, len(ids), 100):
+        got = get_json("ISteamUser/GetPlayerBans/v1/", envelope="players",
+                       required=False, with_steamid=False,
+                       steamids=",".join(ids[start:start + 100]))
+        for row in got if isinstance(got, list) else []:
+            sampled += 1
+            if (row.get("NumberOfVACBans") or 0) or (row.get("NumberOfGameBans") or 0):
+                flagged += 1
+
     out = []
     for f in friends:
         p = people.get(f["steamid"])
@@ -2813,7 +2828,10 @@ def build_friends():
             "public": (p.get("communityvisibilitystate") or 0) == 3,
             "since": date.fromtimestamp(since).isoformat() if since else None,
         })
-    return {"total": len(out), "people": out} if out else None
+    if not out:
+        return None
+    return {"total": len(out), "people": out,
+            "bans": {"sampled": sampled, "flagged": flagged} if sampled else None}
 
 
 def build_mates(rows, people, limit):
@@ -3611,7 +3629,7 @@ def build_profile():
     # already did to watch the crawl fill in.
     economics = build_economics(library, never)
 
-    return {
+    out = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "steamid": STEAM_ID,
         "profile": {
@@ -3726,6 +3744,10 @@ def build_profile():
             ],
         },
     }
+    # Last, because it reads the payload above rather than anything Steam
+    # said: see rep.py. Experimental, and the page labels it so.
+    out["reputation"] = rep.score(out, (friend_list or {}).get("bans"))
+    return out
 
 
 # How many of a library's card sets are queued with the market at once. A
