@@ -33,7 +33,7 @@ them do, so a number can always be read against the rules that made it.
 import math
 from datetime import date
 
-VERSION = 3
+VERSION = 4
 
 # Steam's placeholder, the question mark on a blue square. Every account that
 # never chose a picture has this exact hash in its avatar URL.
@@ -44,7 +44,7 @@ DEFAULT_AVATAR = "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb"
 WEIGHTS = {
     "age": 16,          # how old the account is
     "bans": 16,         # the account's own VAC and game bans
-    "sustained": 10,    # hours played x account age: used, and for a long time
+    "sustained": 10,    # hours per year x years in use: used, and for a long time
     "limited": 8,       # has spent the five dollars Steam asks for
     "level": 8,         # Steam level
     "friend_bans": 7,   # share of the friends checked that carry a ban
@@ -86,6 +86,10 @@ IMPLAUSIBLE_HOURS_PER_DAY = 16
 # nothing; past that the signal fades, and five years of silence is none.
 IDLE_GRACE_DAYS = 365
 IDLE_ZERO_DAYS = 5 * 365
+
+# Hours per year of use at which sustained use is full: about fifty minutes a
+# day, every day, for as long as the account was played.
+HOURS_PER_YEAR_FULL = 300
 
 
 def sat(x, full):
@@ -168,11 +172,18 @@ def score(p, friend_bans=None):
         # The years are the ones the account was in use: from opening to the
         # last game played, not to today. An account played for two years
         # and shut eight years ago is two years of use, not ten.
-        used = age if idle is None else _age(max(0, days - idle))
-        # Geometric mean: high only when both are. Three thousand hours on an
+        span = days if idle is None else max(0, days - idle)
+        # How hard those years were used: hours per year of use, full at
+        # HOURS_PER_YEAR_FULL and linear below it. Total hours on their own
+        # say nothing here - six hundred hours over nine years is eleven
+        # minutes a day, and a log curve on the total scored that as 80%.
+        per_year = hours / (span / 365) if span >= 30 else 0.0
+        pace = min(1.0, per_year / HOURS_PER_YEAR_FULL)
+        shown["per_year"] = round(per_year)
+        # A product: high only when both are. Three thousand hours on an
         # account from last spring and ten years with nothing played are both
-        # half an account. Then it fades with the silence since.
-        got["sustained"] = (math.sqrt(used * hours_f) * _awake(idle), shown)
+        # close to nothing. Then it fades with the silence since.
+        got["sustained"] = (_age(span) * pace * _awake(idle), shown)
 
     limited = pf.get("limited")
     got["limited"] = (None if limited is None else (0.0 if limited else 1.0), limited)

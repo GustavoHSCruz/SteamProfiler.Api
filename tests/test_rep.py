@@ -111,6 +111,14 @@ class ReputationTest(unittest.TestCase):
         self.assertEqual(row["score"], 0)
         self.assertGreater(row["value"]["idle_days"], 5 * 365)
 
+    def test_a_few_hours_over_many_years_is_not_sustained_use(self):
+        """Nine years and 605 hours is eleven minutes a day."""
+        got = rep.score(payload(profile={"days_since": 3284},
+                                totals={"hours": 605, "hours_per_day": 0.18}))
+        row = next(s for s in got["signals"] if s["key"] == "sustained")
+        self.assertLess(row["score"], 25)
+        self.assertEqual(row["value"]["per_year"], 67)
+
     def test_a_year_away_costs_nothing(self):
         recent = (date.today() - timedelta(days=200)).isoformat()
         undated = rep.score(payload())
