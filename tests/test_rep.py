@@ -1,4 +1,5 @@
 import unittest
+from datetime import date, timedelta
 
 import rep
 
@@ -100,6 +101,32 @@ class ReputationTest(unittest.TestCase):
         narrow = rep.score(payload(totals={"top_game_share": 98}))
         pts = lambda r: next(s for s in r["signals"] if s["key"] == "variety")["points"]
         self.assertLess(pts(narrow), pts(broad) / 2)
+
+    def test_an_account_shut_for_years_is_not_sustained_use(self):
+        """Ten years old, a thousand hours, nothing played in the last five."""
+        shut = (date.today() - timedelta(days=5 * 365 + 30)).isoformat()
+        got = rep.score(payload(totals={"hours": 1000},
+                                library=[{"hours": 25, "last_played": shut}] * 40))
+        row = next(s for s in got["signals"] if s["key"] == "sustained")
+        self.assertEqual(row["score"], 0)
+        self.assertGreater(row["value"]["idle_days"], 5 * 365)
+
+    def test_a_year_away_costs_nothing(self):
+        recent = (date.today() - timedelta(days=200)).isoformat()
+        undated = rep.score(payload())
+        dated = rep.score(payload(library=[{"hours": 10, "last_played": recent}] * 40))
+        pts = lambda r: next(s for s in r["signals"] if s["key"] == "sustained")["score"]
+        # The 200 days are taken off the years in use, and nothing else.
+        self.assertGreater(pts(dated), pts(undated) - 5)
+
+    def test_the_years_in_use_end_at_the_last_game(self):
+        """Opened ten years ago, last played three years ago: seven years in
+        use, and two of the three silent ones already fading."""
+        last = (date.today() - timedelta(days=3 * 365)).isoformat()
+        got = rep.score(payload(library=[{"hours": 75, "last_played": last}] * 40))
+        row = next(s for s in got["signals"] if s["key"] == "sustained")
+        self.assertLess(row["score"], 60)
+        self.assertGreater(row["score"], 30)
 
     def test_the_level_is_read_as_a_percentile(self):
         """Level 24 is above 97% of Steam, and the signal says so."""

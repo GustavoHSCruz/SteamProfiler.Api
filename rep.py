@@ -31,8 +31,9 @@ them do, so a number can always be read against the rules that made it.
 """
 
 import math
+from datetime import date
 
-VERSION = 2
+VERSION = 3
 
 # Steam's placeholder, the question mark on a blue square. Every account that
 # never chose a picture has this exact hash in its avatar URL.
@@ -81,6 +82,11 @@ FRIEND_BAN_MIN = 5
 # the one it was built to fool.
 IMPLAUSIBLE_HOURS_PER_DAY = 16
 
+# Sustained use is use that has not stopped. A year without a game costs
+# nothing; past that the signal fades, and five years of silence is none.
+IDLE_GRACE_DAYS = 365
+IDLE_ZERO_DAYS = 5 * 365
+
 
 def sat(x, full):
     """0 at nothing, 1 at `full` and past it, and a log curve between: the
@@ -99,6 +105,28 @@ def _age(days):
     if days < 30:
         return 0.0
     return min(1.0, math.sqrt(days / 3650))
+
+
+def _idle_days(library):
+    """Days since the most recent game played, or None when no game in the
+    library carries a date (Steam dates nothing played before 2009)."""
+    dates = [g["last_played"] for g in library if g.get("last_played")]
+    if not dates:
+        return None
+    try:
+        last = date.fromisoformat(max(dates))
+    except ValueError:
+        return None
+    return max(0, (date.today() - last).days)
+
+
+def _awake(idle):
+    """1 while the account has been played within IDLE_GRACE_DAYS, falling in
+    a straight line to 0 at IDLE_ZERO_DAYS without a game. Unknown is 1: no
+    date is not the same as no play."""
+    if idle is None or idle <= IDLE_GRACE_DAYS:
+        return 1.0
+    return max(0.0, 1 - (idle - IDLE_GRACE_DAYS) / (IDLE_ZERO_DAYS - IDLE_GRACE_DAYS))
 
 
 def score(p, friend_bans=None):
@@ -130,15 +158,21 @@ def score(p, friend_bans=None):
 
     hours_f = sat(hours, 3000) if hours is not None else None
     per_day = totals.get("hours_per_day")
+    idle = _idle_days(library)
+    shown = {"per_day": per_day, "idle_days": idle}
     if age is None or hours_f is None:
         got["sustained"] = (None, None)
     elif per_day is not None and per_day > IMPLAUSIBLE_HOURS_PER_DAY:
-        got["sustained"] = (0.0, per_day)
+        got["sustained"] = (0.0, shown)
     else:
+        # The years are the ones the account was in use: from opening to the
+        # last game played, not to today. An account played for two years
+        # and shut eight years ago is two years of use, not ten.
+        used = age if idle is None else _age(max(0, days - idle))
         # Geometric mean: high only when both are. Three thousand hours on an
         # account from last spring and ten years with nothing played are both
-        # half an account.
-        got["sustained"] = (math.sqrt(age * hours_f), per_day)
+        # half an account. Then it fades with the silence since.
+        got["sustained"] = (math.sqrt(used * hours_f) * _awake(idle), shown)
 
     limited = pf.get("limited")
     got["limited"] = (None if limited is None else (0.0 if limited else 1.0), limited)
