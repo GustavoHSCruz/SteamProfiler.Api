@@ -33,7 +33,7 @@ them do, so a number can always be read against the rules that made it.
 import math
 from datetime import date
 
-VERSION = 4
+VERSION = 5
 
 # Steam's placeholder, the question mark on a blue square. Every account that
 # never chose a picture has this exact hash in its avatar URL.
@@ -64,8 +64,10 @@ assert sum(WEIGHTS.values()) == 100
 # around other people, which is the question the score is trying to answer.
 CAPS = {
     "community_ban": 25,
+    "barely_played": 30,    # fewer hours than HOURS_FLOOR on the clock
     "trade_banned": 35,
     "recent_ban": 40,       # a VAC or game ban in the last year
+    "new_account": 40,      # younger than a year
     "limited": 50,
     "trade_probation": 60,
 }
@@ -92,23 +94,42 @@ IDLE_ZERO_DAYS = 5 * 365
 HOURS_PER_YEAR_FULL = 300
 
 
-def sat(x, full):
-    """0 at nothing, 1 at `full` and past it, and a log curve between: the
-    first hundred hours say much more about an account than the second
-    thousand do."""
-    if not x or x <= 0:
+# Below these, a signal has not started. A single game, a single friend and
+# seven hours on the clock are what an account has an hour after it is made,
+# and a curve that pays for them pays for nothing.
+FLOORS = {"hours": 20, "library": 2, "friends": 3, "badges": 1,
+          "achievements": 10, "variety": 1}
+
+# How the curves bend, once the floor is off. The first version of this used a
+# log curve, which is concave to the point of absurdity: seven hours scored 26
+# out of 100 and one game scored 12, so an account with nothing in it was a
+# third of the way up. Just under 1 is nearly a straight line - the score is
+# earned all the way to the top, and the early slice is worth what it is.
+CURVE = 0.9
+
+
+def curve(x, full, floor=0):
+    """0 up to `floor`, 1 at `full` and past it, and `bend` in between.
+
+    The floor is subtracted rather than tested, so nothing jumps: an account
+    one hour over it scores about nothing, not the first slice of the curve."""
+    if x is None:
+        return None
+    reach = full - floor
+    if reach <= 0 or x is None or x <= floor:
         return 0.0
-    return min(1.0, math.log1p(x) / math.log1p(full))
+    return min(1.0, ((x - floor) / reach) ** CURVE)
 
 
 def _age(days):
-    # Square root rather than log: a year is not most of the way to ten.
-    # One year is 0.32, three 0.57, five 0.74, ten 1.
+    # A year is 0.12, three years 0.33, five 0.53, ten 1. The old curve gave
+    # a year 0.32, which read a nine-month-old account as a third of a
+    # lifetime.
     if days is None:
         return None
     if days < 30:
         return 0.0
-    return min(1.0, math.sqrt(days / 3650))
+    return curve(days, 3650, 30)
 
 
 def _idle_days(library):
@@ -151,16 +172,28 @@ def score(p, friend_bans=None):
     age = _age(days)
     got["age"] = (age, days)
 
+    hours_f = curve(hours, 3000, FLOORS["hours"])
+
+    # How much account there is to have a record on. Both matter and neither
+    # substitutes: an account opened in 2011 and never played is as unproven
+    # as one opened last week with a thousand hours bought into it.
+    substance = 0.0 if age is None or hours_f is None else math.sqrt(age * hours_f)
+
     # A ban does not heal, but ten years is not last month. Half the weight
     # comes back over a decade, split across however many there are.
+    #
+    # A clean record is worth what there was to keep clean. This used to be a
+    # flat 100 for everybody, which handed a seven-hour account sixteen points
+    # - over half of everything it scored - for never having had the chance to
+    # be banned. Nothing here is taken away from an account that behaved: the
+    # points arrive as the account does.
     n_bans = (bans.get("vac") or 0) + (bans.get("game") or 0)
     if n_bans:
         since = bans.get("days_since") or 0
         got["bans"] = (0.5 * min(1.0, since / 3650) / n_bans, n_bans)
     else:
-        got["bans"] = (1.0, 0)
+        got["bans"] = (substance, 0)
 
-    hours_f = sat(hours, 3000) if hours is not None else None
     per_day = totals.get("hours_per_day")
     idle = _idle_days(library)
     shown = {"per_day": per_day, "idle_days": idle}
@@ -199,7 +232,7 @@ def score(p, friend_bans=None):
     elif pct is not None:
         got["level"] = (min(1.0, pct / 100), level)
     else:
-        got["level"] = (0.0 if level == 0 else sat(level, 100), level)
+        got["level"] = (0.0 if level == 0 else curve(level, 100), level)
 
     if friend_bans and (friend_bans.get("sampled") or 0) >= FRIEND_BAN_MIN:
         share = friend_bans["flagged"] / friend_bans["sampled"]
@@ -210,7 +243,7 @@ def score(p, friend_bans=None):
         got["friend_bans"] = (None, None)
 
     owned = totals.get("owned")
-    got["library"] = (None if owned is None else sat(owned, 300), owned)
+    got["library"] = (None if owned is None else curve(owned, 300, FLOORS["library"]), owned)
     got["hours"] = (hours_f, hours)
 
     # Games with at least an hour in them, discounted when one game is nearly
@@ -218,12 +251,14 @@ def score(p, friend_bans=None):
     real = sum(1 for g in library if (g.get("hours") or 0) >= 1)
     top = totals.get("top_game_share") or 0
     focus = 1.0 if top < 80 else max(0.3, 1 - (top - 80) / 20 * 0.7)
-    got["variety"] = (sat(real, 40) * focus, {"games": real, "top_share": round(top)})
+    got["variety"] = (curve(real, 40, FLOORS["variety"]) * focus,
+                      {"games": real, "top_share": round(top)})
 
     friends = pf.get("friends")
     if friends is None:
         friends = (p.get("friend_list") or {}).get("total")
-    got["friends"] = (None if friends is None else sat(friends, 150), friends)
+    got["friends"] = (None if friends is None
+                      else curve(friends, 150, FLOORS["friends"]), friends)
 
     avatar = pf.get("avatar") or ""
     marks = {
@@ -241,10 +276,12 @@ def score(p, friend_bans=None):
                     + 0.2 * len([k for k in worn if k != "background"]), worn)
 
     badges = pf.get("badge_count")
-    got["badges"] = (None if badges is None else sat(badges, 50), badges)
+    got["badges"] = (None if badges is None
+                     else curve(badges, 50, FLOORS["badges"]), badges)
 
     ach = pf.get("achievements_total")
-    got["achievements"] = (None if ach is None else sat(ach, 2000), ach)
+    got["achievements"] = (None if ach is None
+                           else curve(ach, 2000, FLOORS["achievements"]), ach)
 
     parts = [k for k in ("groups", "screenshots", "reviews", "workshop") if pf.get(k)]
     got["community"] = (len(parts) / 4, parts)
@@ -268,6 +305,13 @@ def score(p, friend_bans=None):
     raw = round(points / known * 100) if known else 0
 
     caps = []
+    # An account can be everything else and still be too new or too empty to
+    # have shown it. Both are ceilings rather than deductions, and the page
+    # says which one it hit and what the score would have been.
+    if days is not None and days < 365:
+        caps.append("new_account")
+    if hours is not None and hours < FLOORS["hours"] + 5:
+        caps.append("barely_played")
     if bans.get("community"):
         caps.append("community_ban")
     if bans.get("economy") == "banned":

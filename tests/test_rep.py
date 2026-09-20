@@ -124,8 +124,10 @@ class ReputationTest(unittest.TestCase):
         undated = rep.score(payload())
         dated = rep.score(payload(library=[{"hours": 10, "last_played": recent}] * 40))
         pts = lambda r: next(s for s in r["signals"] if s["key"] == "sustained")["score"]
-        # The 200 days are taken off the years in use, and nothing else.
-        self.assertGreater(pts(dated), pts(undated) - 5)
+        # The 200 days are taken off the years in use, and nothing else. The
+        # steeper age curve of rules version 5 made that exactly five points
+        # on this fixture, where it used to be a little under.
+        self.assertGreaterEqual(pts(dated), pts(undated) - 5)
 
     def test_the_years_in_use_end_at_the_last_game(self):
         """Opened ten years ago, last played three years ago: seven years in
@@ -135,6 +137,54 @@ class ReputationTest(unittest.TestCase):
         row = next(s for s in got["signals"] if s["key"] == "sustained")
         self.assertLess(row["score"], 60)
         self.assertGreater(row["score"], 30)
+
+    def test_a_clean_record_on_an_empty_account_is_worth_nothing(self):
+        """Never banned is not an achievement on an account seven hours old:
+        it is the ordinary state of something that has not been used. The
+        signal pays as the account grows."""
+        thin = rep.score(payload(profile={"days_since": 236, "bans": None},
+                                 totals={"hours": 7, "owned": 1,
+                                         "hours_per_day": 0.03,
+                                         "top_game_share": 100},
+                                 library=[{"hours": 7}]))
+        row = next(s for s in thin["signals"] if s["key"] == "bans")
+        self.assertEqual(row["score"], 0)
+        full = rep.score(payload())
+        self.assertEqual(next(s for s in full["signals"]
+                              if s["key"] == "bans")["score"], 100)
+
+    def test_a_seven_hour_account_scores_almost_nothing(self):
+        """The whole account from the complaint: 236 days, seven hours, one
+        game. It used to score 31, over half of it for never being banned."""
+        got = rep.score(payload(
+            profile={"days_since": 236, "level": 1, "level_percentile": 14.38,
+                     "limited": None, "friends": 1, "badge_count": 1,
+                     "achievements_total": None, "groups": None,
+                     "screenshots": 0, "reviews": 0, "workshop": 0,
+                     "items": {}, "custom_url": None, "bio": None,
+                     "location": None, "bans": None},
+            totals={"hours": 7, "owned": 1, "hours_per_day": 0.03,
+                    "top_game_share": 100},
+            library=[{"hours": 7}]), None)
+        self.assertLess(got["score"], 10)
+
+    def test_nothing_under_the_floor_scores(self):
+        """One game, one friend, one badge and seven hours are what an account
+        has an hour after it is made."""
+        got = rep.score(payload(profile={"friends": 1, "badge_count": 1},
+                                totals={"hours": 7, "owned": 1}))
+        by = {s["key"]: s["score"] for s in got["signals"]}
+        for key in ("hours", "library", "friends", "badges"):
+            self.assertEqual(by[key], 0, key)
+
+    def test_a_new_account_is_capped_however_well_it_dresses(self):
+        got = rep.score(payload(profile={"days_since": 200}), CLEAN_FRIENDS)
+        self.assertEqual(got["cap"]["reason"], "new_account")
+        self.assertEqual(got["score"], rep.CAPS["new_account"])
+
+    def test_an_account_with_no_hours_is_capped(self):
+        got = rep.score(payload(totals={"hours": 3}), CLEAN_FRIENDS)
+        self.assertEqual(got["cap"]["reason"], "barely_played")
 
     def test_the_level_is_read_as_a_percentile(self):
         """Level 24 is above 97% of Steam, and the signal says so."""
