@@ -1338,7 +1338,7 @@ class Handler(BaseHTTPRequestHandler):
         theme_tag = (f'<meta name="sp-game" content="{html.escape(theme, quote=True)}">'
                      if theme else "")
         tags = (
-            f'<title>{html.escape(name)} — steamprofiler.org</title>'
+            f'<title>{html.escape(name)} - steamprofiler.org</title>'
             f'{robots}'
             f'{theme_tag}'
             f'<meta name="description" content="{html.escape(description, quote=True)}">'
