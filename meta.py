@@ -916,7 +916,9 @@ def _do_prices(batch, cc, timeout=TIMEOUT):
     if body is None:
         return False
     for appid in batch:
-        entry = (body or {}).get(str(appid)) or {}
+        entry = _entry_for(body, appid)
+        if entry is None:
+            continue
         if not entry.get("success"):
             # Gone from the store. That is an answer, and writing the timestamp
             # is what stops it being asked again on every lookup - but the old
@@ -944,6 +946,29 @@ def _do_prices(batch, cc, timeout=TIMEOUT):
     return True
 
 
+def _entry_for(body, appid):
+    """The part of an appdetails answer that is about `appid`, or None.
+
+    The answer is keyed by appid, except when it is not: since September 2026
+    the unfiltered call for one app comes back keyed by one of that game's
+    DLC ids - Portal 2 answers as "323180", Counter-Strike 2 as "2678630" -
+    with the game itself inside, `steam_appid` intact. Reading only the key
+    found nothing, and nothing was written down as "not on the store": 609
+    games, Dota 2, CS2 and TF2 among them, went dark that way. So the data's
+    own id is the second place to look, and an answer that names neither is
+    an answer about something else, which says nothing about this app."""
+    if not isinstance(body, dict):
+        return None
+    hit = body.get(str(appid))
+    if isinstance(hit, dict):
+        return hit
+    for entry in body.values():
+        data = entry.get("data") if isinstance(entry, dict) else None
+        if isinstance(data, dict) and data.get("steam_appid") == int(appid):
+            return entry
+    return None
+
+
 def _do_detail(appid, timeout=TIMEOUT, language="english"):
     # No filter on purpose. appdetails already costs one request, and its full
     # response is the catalogue we would otherwise spend years rebuilding one
@@ -952,7 +977,11 @@ def _do_detail(appid, timeout=TIMEOUT, language="english"):
     body = _get({"appids": appid, "cc": COUNTRY, "l": language}, timeout=timeout)
     if body is None:
         return False
-    entry = (body or {}).get(str(appid)) or {}
+    entry = _entry_for(body, appid)
+    if entry is None:
+        # Not a "no": the store answered about something else. Leave the row
+        # as it was and let the next pass ask again.
+        return False
     data = entry.get("data") if entry.get("success") else None
     if not isinstance(data, dict):
         at = _stamp()
