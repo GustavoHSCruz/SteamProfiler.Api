@@ -1,4 +1,4 @@
-/* SteamProfiler.UI 0.1.0 (dacc046+dirty). Generated: edit github.com/GustavoHSCruz/SteamProfiler.UI, not this copy. */
+/* SteamProfiler.UI 0.1.0 (76d7fe3+dirty). Generated: edit github.com/GustavoHSCruz/SteamProfiler.UI, not this copy. */
 
 /* ── Tokens ─────────────────────────────────────────────────────────────
    The names are the ones the served site has used since the first stylesheet
@@ -549,7 +549,274 @@
 }
 @keyframes sp-pulse { 50% { opacity: 0.45; } }
 
+/* ── Switch ─────────────────────────────────────────────────────────────
+   A setting that is on or off, and takes effect where it is. Not a checkbox:
+   a checkbox is a thing you tick and then submit, and these are answered the
+   moment they are moved. The track carries the state and the label carries the
+   consequence, which is why the label is part of the component rather than
+   something beside it - a switch whose meaning lives in a paragraph two lines
+   up is a switch that gets flipped by mistake. */
+
+.sp-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  cursor: pointer;
+}
+.sp-switch input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sp-switch-track {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.sp-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+.sp-switch input:checked + .sp-switch-track {
+  background: color-mix(in srgb, var(--accent) 26%, var(--panel-2));
+  border-color: var(--accent-d);
+}
+.sp-switch input:checked + .sp-switch-track .sp-switch-thumb {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+.sp-switch input:focus-visible + .sp-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sp-switch input:disabled + .sp-switch-track { opacity: 0.45; }
+.sp-switch input:disabled ~ .sp-switch-text { opacity: 0.45; }
+.sp-switch-text { display: grid; gap: 3px; min-width: 0; }
+.sp-switch-name { font-size: 13.5px; line-height: 1.35; color: var(--text); }
+/* What turning it off actually costs. Optional, and worth writing every time:
+   a switch with no consequence written down is a switch nobody dares move. */
+.sp-switch-note { font-family: var(--mono); font-size: 11px; line-height: 1.55; color: var(--dim); }
+
+/* ── Table ──────────────────────────────────────────────────────────────
+   For rows that are read against each other rather than one at a time. The
+   head stays while the body scrolls, and every column that is a measurement is
+   mono and tabular, because a column of numbers that do not line up is a
+   column you cannot scan. */
+
+.sp-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  text-align: left;
+}
+.sp-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-2);
+  color: var(--dim);
+  font-family: var(--label);
+  font-weight: var(--label-w);
+  font-size: 9.5px;
+  letter-spacing: var(--label-ls);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sp-table th, .sp-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sp-table tbody tr:last-child td { border-bottom: 0; }
+.sp-table tbody tr:hover td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.sp-table td { font-variant-numeric: tabular-nums; }
+/* The column that carries the sentence, rather than a measurement. It takes
+   the room the others do not need. */
+.sp-table-wide { width: 100%; font-variant-numeric: normal; }
+
+/* ── Nav ────────────────────────────────────────────────────────────────
+   A column of places, for a screen that is a console rather than a document.
+   A row is a place, so the current one gets a filled surface and a marker on
+   its edge - not an underline, which reads as "the current one of several"
+   rather than "you are here". */
+
+.sp-nav { display: grid; gap: 2px; }
+.sp-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  background: none;
+  border: 0;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  color: var(--dim);
+  font-family: var(--label);
+  font-size: 11px;
+  font-weight: var(--label-w);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.sp-nav-item:hover { background: var(--panel-2); color: var(--text); }
+.sp-nav-item[aria-current="page"], .sp-nav-item[data-on="1"] {
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.sp-nav-item[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.sp-nav-item[aria-disabled="true"]:hover { background: none; color: var(--dim); }
+
+/* A number that is not there is not a zero: an empty badge draws nothing at
+   all rather than a "0" that has to be read before it can be dismissed. */
+.sp-badge {
+  flex: none;
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--dim);
+}
+.sp-badge:empty { display: none; }
+.sp-badge[data-tone="accent"] { background: var(--accent); color: var(--on-accent); }
+.sp-badge[data-tone="bad"] { background: var(--bad); color: var(--on-accent); }
+
+/* ── Meter ──────────────────────────────────────────────────────────────
+   A label, a proportional bar, a number. Deliberately not a chart: a count of
+   forty things does not need axes, and this is read for shape rather than for
+   values to a decimal. */
+
+.sp-meter {
+  display: grid;
+  grid-template-columns: minmax(80px, 26%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sp-meter > span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-meter > b { color: var(--text); font-weight: 600; }
+.sp-meter-track { height: 7px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.sp-meter-fill { height: 100%; background: var(--accent-d); border-radius: 999px; }
+.sp-meter[data-tone="strong"] .sp-meter-fill { background: var(--accent); }
+.sp-meter[data-tone="weak"] .sp-meter-fill { background: var(--faint); }
+
+/* ── Bar ────────────────────────────────────────────────────────────────
+   The status strip across the top. Waybar, more or less: fixed height, mono,
+   modules pushed to the edges. */
+
+.sp-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 42px;
+  padding: 0 clamp(10px, 1vw, 14px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.sp-bar-gap { flex: 1; min-width: 0; }
+
+/* ── Lamp ───────────────────────────────────────────────────────────────
+   Whether a thing is running, in one line. The dot carries the state and the
+   words carry what it means: a light with no sentence beside it is decoration,
+   and the two failures worth a lamp at all are the ones that look like health
+   from every other angle. */
+
+.sp-lamp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.sp-lamp::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.sp-lamp[data-tone="good"]::before { background: var(--good); }
+.sp-lamp[data-tone="bad"]::before { background: var(--bad); }
+.sp-lamp[data-tone="warn"]::before { background: var(--accent); }
+.sp-lamp[data-tone="warn"] { color: var(--accent); }
+
+/* ── Code ───────────────────────────────────────────────────────────────
+   A path, a digest, a User-Agent. Something a machine wrote, shown as
+   something a machine wrote, and allowed to break anywhere because a URL that
+   overflows its panel takes the layout with it. */
+
+.sp-code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sp-code--block {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ── Empty ──────────────────────────────────────────────────────────────
+   Nothing to show, said in a way that distinguishes "nothing arrived" from
+   "something is broken". The dashed edge is the tell: it is a space that is
+   meant to be filled. */
+
+.sp-empty {
+  margin: 0;
+  padding: 24px 20px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--faint);
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sp-btn, .sp-pill, .sp-seg-btn, .sp-panel::after, .sp-row, .sp-panel-go { transition: none; }
+  .sp-btn, .sp-pill, .sp-seg-btn, .sp-panel::after, .sp-row, .sp-panel-go,
+  .sp-nav-item, .sp-switch-track, .sp-switch-thumb { transition: none; }
   .sp-skeleton { animation: none; }
 }
