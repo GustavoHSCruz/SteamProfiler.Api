@@ -11,6 +11,10 @@ Thanks for helping improve SteamProfiler.
   logs, or private Steam profile data in an issue, fixture, or commit.
 - Preserve the standard-library-only runtime unless a new dependency has a
   clear operational benefit and has been discussed first.
+- The Python service is frozen at `v1.0.0` and takes security fixes only. New
+  behavior and behavior fixes belong in `v2/` (.NET 10), following
+  [docs/v2/PLANO.md](docs/v2/PLANO.md): a handler per use case, rules in the
+  aggregate, and no reference from `2.Application` to `4.Infrastructure`.
 
 ## Local workflow
 

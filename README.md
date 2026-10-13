@@ -233,6 +233,22 @@ Run the same validation used by CI:
 It checks Python and JavaScript syntax, runs 59 unit tests, audits the release
 tree for common secret leaks, and validates nginx and Docker Compose.
 
+## V2
+
+A rewrite in .NET 10 is growing in [`v2/`](v2/) and runs beside this service
+under `/api/v2`, backed by PostgreSQL (the `db` and `api-v2` services in
+`docker-compose.yml`). The Python service above is frozen at tag `v1.0.0` and
+only receives security fixes until 2027-04-13. The plan, the phases and what is
+already live are in [docs/v2/PLANO.md](docs/v2/PLANO.md).
+
+```sh
+cd v2
+dotnet test SteamProfiler.slnx      # the integration suite needs Docker
+dotnet tool restore && dotnet csharpier format .
+```
+
+`./check.sh` builds and tests it too when `dotnet` is installed.
+
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before a
 pull request and report vulnerabilities privately as described in
 [SECURITY.md](SECURITY.md).

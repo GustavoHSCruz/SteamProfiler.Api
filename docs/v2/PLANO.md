@@ -1,6 +1,8 @@
 # Plano da V2 da API
 
-Estado: planejamento. Nenhuma linha da V2 existe ainda.
+Estado: fase 0 (fundação) entregue em 13/10/2026. A solução está em `v2/`, o
+Postgres e a `api-v2` rodam no compose e `/api/v2/healthz` responde em produção.
+Ainda não há rota de negócio: a próxima entrega é a fase 1.
 Escrito em 13/10/2026.
 
 ## 1. O que está decidido
@@ -69,9 +71,12 @@ v2/
        +------->  4.Infrastructure  --------+
 ```
 
-- `Domain.Shared` não conhece ninguém. Tem `Entity`, `IAggregateRoot`,
-  `IReadRepository`, `IWriteRepository`, `IUnitOfWork` e as bases
-  `CommandRequest<T>`, `QueryRequest<T>`, `CommandResponse`, `QueryResponse`.
+- `Domain.Shared` não conhece ninguém, nem pacote: um teste de arquitetura
+  falha se ele ganhar uma referência. Tem `Entity`, `IAggregateRoot`,
+  `IReadRepository`, `IWriteRepository`, `IUnitOfWork`, as bases
+  `CommandRequest<T>`, `QueryRequest<T>`, `CommandResponse`, `QueryResponse`
+  e as interfaces do despachante (`IMediator`, `IRequest<T>`,
+  `IRequestHandler<,>`, `INotification`, `IPipelineBehavior<,>`).
 - `Domain.Core` tem as regras: agregados, objetos de valor, eventos, e as
   interfaces do que o domínio precisa de fora (`ISteamWebApi`, `ISteamStore`,
   `ISteamCommunity`, `IClock`, `IAddressHasher`).
@@ -80,10 +85,16 @@ v2/
   existe Postgres, HTTP e a chave da Steam.
 - `Service.API` traduz HTTP para request e response. Controller não tem regra.
 
-Um desvio consciente em relação ao projeto de referência: lá a camada de
-aplicação referencia a de infraestrutura. Aqui as interfaces ficam no domínio e
-só a API referencia a infraestrutura, na composição. Está na seção 9 para
-confirmação.
+Dois desvios conscientes em relação ao projeto de referência, os dois
+confirmados em 13/10/2026:
+
+- Lá a camada de aplicação referencia a de infraestrutura. Aqui as interfaces
+  ficam no domínio e só a API referencia a infraestrutura, na composição. O
+  mesmo teste de arquitetura segura isto.
+- Lá toda entidade tem `Guid`, `IsActive` e `IsDeleted`. Aqui a base é
+  `Entity<TId>`, com a chave que o dado já tem e só as duas datas: um jogo é o
+  appid dele, um post é a chave do endereço, um recado é um inteiro que já
+  está em URL por aí. Exclusão lógica entra no agregado que precisar dela.
 
 ### 3.3 CQRS
 
@@ -102,12 +113,15 @@ projeta direto no DTO de resposta. Não carrega agregado.
 **Pipeline do mediador**, na ordem:
 
 1. `RequestBehavior` - endereço do chamador (já com hash e sal), idioma, e
-   quem é, no dia em que existir conta.
+   quem é, no dia em que existir conta. Na fase 0 leva só o idioma, lido de
+   `?lang=` contra o mesmo conjunto fechado da V1; o hash do endereço entra na
+   fase 1, junto com o porte do sal de `store.py`.
 2. `ValidationBehavior` - FluentValidation. Request sem validador gera aviso
    uma vez por tipo, não erro.
 3. `BudgetBehavior` - novo, não existe na referência. É o `guard.py`: cada
    request que pode gastar a chave da Steam declara o preço, e o que já está
    em cache custa o que custa. Fica no pipeline para nenhum handler esquecer.
+   Ainda não existe: entra na fase 3, com o primeiro pedido que gasta a chave.
 
 ### 3.4 Contextos e agregados
 
@@ -132,9 +146,9 @@ Regras que hoje estão espalhadas e passam a morar no agregado:
 | Para quê | Pacote |
 | --- | --- |
 | Web | ASP.NET Core 10, `Microsoft.AspNetCore.OpenApi` |
-| Dados | EF Core 10, `Npgsql.EntityFrameworkCore.PostgreSQL` |
+| Dados | EF Core 10, `Npgsql.EntityFrameworkCore.PostgreSQL`, `EFCore.NamingConventions` (tabelas e colunas em snake_case) |
 | Validação | FluentValidation 12 |
-| Mediador | em aberto, ver seção 9 |
+| Mediador | nenhum: despachante próprio em `2.Application/Common/Messaging` |
 | Testes | xunit, `Microsoft.AspNetCore.Mvc.Testing`, `Testcontainers.PostgreSql` |
 | Formatação | CSharpier, no pre-commit |
 
@@ -145,7 +159,9 @@ Um PostgreSQL, um schema por contexto: `catalog`, `community`, `protection`,
 
 **Migrations** pelo EF, aplicadas por um passo explícito do deploy, nunca na
 subida da api: uma migration que falha não pode ser o motivo de a api não
-voltar.
+voltar. O passo é o próprio binário, `docker compose run --rm api-v2 migrate`,
+rodado pelo `deploy.sh` com a imagem nova e antes de trocar o container. A
+primeira migration cria os quatro schemas.
 
 **Dados da V1.** Um importador de execução única (`v2/tools/import-v1`) lê os
 SQLite e escreve no Postgres. Idempotente, pode rodar de novo.
@@ -192,7 +208,9 @@ Regras do contrato:
 
 - **Erro** sempre como `{ "errors": ["@err.chave"] }`, com as mesmas chaves
   `@err.*` que o front já traduz. Status 400 por padrão, e o handler só troca
-  quando o status faz parte do contrato.
+  quando o status faz parte do contrato. Vale também para o que nenhum handler
+  viu: rota inexistente, corpo que não é JSON, exceção, e os avisos do nginx.
+- **Nomes** em snake_case no corpo e na query string, como a V1 já responde.
 - **OpenAPI** publicado em `/api/v2/openapi.json`. É o contrato; o front gera
   os tipos a partir dele.
 - **Cache**: os mesmos `Cache-Control` e TTL da V1, rota a rota.
@@ -210,14 +228,25 @@ que a V1 sair, atendidas pela V2 no caminho antigo:
 
 ## 6. Convivência
 
-No compose entram dois serviços: `db` (Postgres, volume próprio, sem porta
-publicada) e `api-v2`. O nginx ganha um upstream e um bloco:
+No compose entram dois serviços: `db` (Postgres 18, volume próprio, sem porta
+publicada) e `api-v2`. O nginx ganha um bloco:
 
 ```
-location /api/v2/ { ... proxy_pass http://sp_api_v2/; }
+location /api/v2/ { ... set $sp_v2 http://api-v2:8080; proxy_pass $sp_v2; }
 ```
 
-com os mesmos limites, o mesmo portão e as mesmas páginas de erro de `/api/`.
+com os mesmos limites e o mesmo portão de `/api/`, e os avisos no formato de
+erro da V2. Duas escolhas ali não são as óbvias:
+
+- **Variável, e não `upstream`.** O nginx resolve os nomes de um upstream
+  quando sobe, e sem a `api-v2` de pé ele não subiria: o site inteiro cairia
+  por causa de uma api que ainda não atende ninguém. Com variável o nome é
+  resolvido a cada pedido, a V2 parada é um 502 só em `/api/v2`, e o `web` não
+  tem `depends_on` dela. O `nginx -t` do `check.sh` segura a escolha.
+- **O caminho segue inteiro.** O nginx não tira `/api/v2` antes de entregar. A
+  V2 serve esse caminho de verdade, então o OpenAPI descreve o endereço
+  público, e ela poderá responder os endereços antigos da seção 5 no lugar
+  onde eles sempre estiveram.
 
 - **O portão continua na V1** até a fase 5. Banimento precisa de uma autoridade
   só, e trocá-la é o último passo, não o primeiro.
@@ -229,7 +258,13 @@ com os mesmos limites, o mesmo portão e as mesmas páginas de erro de `/api/`.
   troca uma tela por vez, atrás de uma constante por tela, e não um cliente
   global.
 - `.env` do servidor: toda variável nova de caminho ou bind entra lá antes do
-  primeiro recreate.
+  primeiro recreate. A do Postgres (`POSTGRES_PASSWORD`) tem padrão no compose
+  em vez de ser obrigatória, porque variável obrigatória que falta impede o
+  compose inteiro de parsear, V1 inclusive; quem exige a senha em produção é o
+  `deploy.sh`, que não sobe a V2 sem ela.
+- **O deploy da V2 vem depois do da V1** e não recria `api` nem `web`: banco,
+  build, migration, troca do container, `probe`. Se algum passo falha, a V1
+  já está de volta no ar e a `api-v2` anterior continua de pé.
 
 ## 7. Fases
 
@@ -244,6 +279,8 @@ Cada fase termina em produção, com critério de saída que se confere de fora.
 | 4. Embeds | SVG, PNG do link, cartão, assinatura | os endereços antigos de embed respondidos pela V2, iguais aos da V1 |
 | 5. Proteção e censo | portão, armadilha, bans, apelação, censo, registro de segurança, rotas de administração | o `auth_request` do nginx aponta para a V2 e o painel lê dela |
 | 6. Desligar a V1 | Companion e player atendidos pela V2, Python fora da raiz, tag `v2.0.0` | nenhum container Python no compose |
+
+Fase 0 concluída em 13/10/2026.
 
 Ordem escolhida para errar barato: a fase 1 é o menor contexto que exercita o
 molde inteiro (comando, validador, evento, migration, importador, virada de
@@ -265,20 +302,21 @@ caminho duas vezes.
 
 ## 9. Em aberto
 
-1. **Mediador e licença.** O MediatR mudou de licença a partir da versão 13:
-   reciprocal ou comercial, com chave. Este repositório é MIT e público.
-   Opções: MediatR 12 (Apache 2.0, a última nesse regime), um despachante
-   próprio (umas 150 linhas, sem dependência), ou outro mediador MIT. Conferir
-   os termos antes da fase 0.
-2. **Aplicação sem referência à infraestrutura** (seção 3.2): confirmar o
-   desvio em relação ao projeto de referência.
+1. ~~Mediador e licença.~~ **Fechado em 13/10/2026: despachante próprio.** O
+   MediatR mudou de licença a partir da versão 13 (recíproca ou comercial, com
+   chave) e este repositório é MIT e público. O que se usa de um mediador
+   coube num arquivo, sem dependência.
+2. ~~Aplicação sem referência à infraestrutura.~~ **Fechado em 13/10/2026:
+   sem referência**, como a seção 3.2 descreve.
 3. **Orçamento da chave na convivência.** Enquanto as duas apis gastam a mesma
    chave da Steam, o teto diário precisa ser contado num lugar só. Proposta: a
    V1 segue dona do orçamento até a fase 3 e a V2 pergunta a ela.
 4. **Cache de perfil.** Memória do processo, como hoje, ou um cache distribuído.
    Proposta: memória, com `IMemoryCache` limitado por tamanho. Uma instância
    só não precisa de mais.
-5. **Imagem base.** `aspnet:10.0` comum ou a variante chiseled, sem shell.
+5. ~~Imagem base.~~ **Fechado em 13/10/2026: chiseled com `extra`** (ICU e
+   tzdata), sem shell e sem root. Como não há curl nem wget lá dentro, o
+   healthcheck é o próprio binário: `dotnet Service.API.dll probe`.
 6. **Painel de administração.** Continua em Python falando com `/admin/*` até
    a fase 5, ou é reescrito junto. Proposta: continua.
 7. **O que é correção de segurança na V1.** Proposta: vulnerabilidade, abuso e
