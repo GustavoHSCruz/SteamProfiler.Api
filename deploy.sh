@@ -241,8 +241,10 @@ while IFS= read -r f; do
     # A V2 (v2/, .NET). As duas primeiras linhas existem para ela não ser
     # reconstruída à toa: o rsync lista também as pastas cujo carimbo mudou,
     # e a worktree nasce com o carimbo de agora, então `v2/` aparece em todo
-    # deploy sem que arquivo nenhum tenha mudado.
-    v2/*/)              ;;
+    # deploy sem que arquivo nenhum tenha mudado. A própria `v2/` está escrita
+    # à parte porque `v2/*/` pede uma segunda barra e não casa com ela: sem
+    # isso um deploy só de documentação reconstruiu a api-v2 em 13/10/2026.
+    v2/|v2/*/)          ;;
     v2/*.md)            ;;
     v2/*)               NEEDS_V2=1 ;;
     *.py)               NEEDS_API=1 ;;
