@@ -77,6 +77,68 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── A V2 ───────────────────────────────────────────────────────────
+  # O Postgres da api em .NET (v2/). Sem porta publicada: só a api-v2 fala com
+  # ele, pela rede do compose.
+  #
+  # A senha tem um padrão, e não `:?`, de propósito. Interpolação obrigatória
+  # faz o compose inteiro deixar de parsear quando a variável falta, e aí
+  # recriar a api da V1 num servidor que ainda não a tem no .env falharia por
+  # causa de um banco que ela nem usa. O padrão serve para o clone que só quer
+  # ver funcionar; em produção o deploy.sh se recusa a subir a V2 sem
+  # POSTGRES_PASSWORD no .env.
+  #
+  # Os tetos são do tamanho do servidor, que divide 8 GB com muita coisa.
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: steamprofiler
+      POSTGRES_DB: steamprofiler
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-steamprofiler}"
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "max_connections=30"]
+    volumes:
+      # O 18 mudou o layout: o volume vai na pasta de cima e os dados ficam em
+      # /var/lib/postgresql/18/docker. Montar em .../data, como até o 17, faz o
+      # container se recusar a subir.
+      - pg-data:/var/lib/postgresql
+    mem_limit: 384m
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U steamprofiler -d steamprofiler"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # A api em .NET. Ninguém depende dela: o `web` a alcança por nome resolvido a
+  # cada pedido (ver o bloco /api/v2/ no nginx.conf), então ela pode cair,
+  # reiniciar ou nem existir sem que o site perceba fora de /api/v2.
+  #
+  # Não aplica migration quando sobe. Isso é `docker compose run --rm api-v2
+  # migrate`, que o deploy.sh roda antes de recriar este container.
+  api-v2:
+    build:
+      context: ./v2
+    environment:
+      DB_HOST: db
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-steamprofiler}"
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # A imagem não tem shell nem wget; quem pergunta é o próprio binário.
+      test: ["CMD", "dotnet", "Service.API.dll", "probe"]
+      interval: 60s
+      timeout: 8s
+      retries: 3
+      start_period: 15s
+
   # Optional owner panel. It is intentionally absent from a normal `up` and
   # loopback-only by default. Prefer an SSH tunnel over a public port.
   admin:
@@ -126,3 +188,4 @@ services:
 
 volumes:
   app-data:
+  pg-data:

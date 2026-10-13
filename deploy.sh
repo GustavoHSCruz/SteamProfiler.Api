@@ -170,6 +170,9 @@ fi
 #                      e apagá-lo derruba a tradução do blog em silêncio,
 #                      porque o nginx segue de pé servindo o resto
 #   deploy.sh/watch.py editar o watcher não pode reiniciar a api em produção
+#   v2/**/bin, obj     saída de build do .NET. O export versionado não tem, e
+#                      o check.sh compila fora da árvore, mas o --local copia
+#                      a árvore de trabalho, onde quem desenvolve tem as duas
 #
 # Cada um desses foi visto num --dry-run antes de este arquivo existir na
 # forma atual: os três últimos apareceram como "deleting" na primeira versão
@@ -185,6 +188,7 @@ API_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' \
   --exclude '__pycache__/' --exclude '.git' --exclude 'site/' --exclude 'next/' \
   --exclude 'ollama-bridge/' --exclude 'deploy.sh' --exclude 'watch.py' \
   --exclude 'proxy-trust/' \
+  --exclude 'v2/**/bin/' --exclude 'v2/**/obj/' --exclude 'v2/**/TestResults/' \
   "$TMP/api/" "$REMOTO:$DESTINO/")" || morre "api: rsync falhou"
 
 FRONT_SAIU="$(rsync -azc --delete "${SECO[@]}" --out-format='%n' --exclude '.git' \
@@ -229,14 +233,30 @@ lista front "$FRONT_SAIU"
 #
 # Agora é `docker compose up -d --force-recreate` pelo serviço, rodando na
 # pasta do projeto no servidor, e o erro aparece.
-NEEDS_API=0; NEEDS_WEB=0; NEEDS_ADMIN=0
+NEEDS_API=0; NEEDS_WEB=0; NEEDS_ADMIN=0; NEEDS_V2=0
 while IFS= read -r f; do
   case "$f" in
     admin/*)            NEEDS_ADMIN=1 ;;
     nginx.conf)         NEEDS_WEB=1 ;;
+    # A V2 (v2/, .NET). As duas primeiras linhas existem para ela não ser
+    # reconstruída à toa: o rsync lista também as pastas cujo carimbo mudou,
+    # e a worktree nasce com o carimbo de agora, então `v2/` aparece em todo
+    # deploy sem que arquivo nenhum tenha mudado.
+    v2/*/)              ;;
+    v2/*.md)            ;;
+    v2/*)               NEEDS_V2=1 ;;
     *.py)               NEEDS_API=1 ;;
   esac
 done <<< "$API_SAIU"
+
+# E a V2 que deveria existir e ainda não existe. O gatilho de cima olha o que o
+# rsync mandou agora, então um primeiro `up` que não chegou ao fim (o .env sem
+# a senha, o build que falhou) nunca seria tentado de novo: na vez seguinte os
+# arquivos já estão lá e nada "mudou". Sem container criado, sobe.
+if [ "$NEEDS_V2" -eq 0 ] && [ -f "$TMP/api/v2/Dockerfile" ]; then
+  [ -n "$(ssh "$REMOTO" "cd $DESTINO && docker compose ps -a -q api-v2 2>/dev/null")" ] \
+    || NEEDS_V2=1
+fi
 
 # O next/ também pede o web recriado. Em 11/09/2026 um deploy trocou a pasta no
 # host e o container seguiu com o mount apontando para a anterior, vazia: o
@@ -247,7 +267,7 @@ done <<< "$API_SAIU"
 
 if [ "$ENSAIO" -eq 1 ]; then
   log "ensaio: nada foi escrito no servidor e nada foi reiniciado"
-  log "ensaio: reiniciaria api=$NEEDS_API web=$NEEDS_WEB admin=$NEEDS_ADMIN"
+  log "ensaio: reiniciaria api=$NEEDS_API web=$NEEDS_WEB admin=$NEEDS_ADMIN v2=$NEEDS_V2"
   exit 0
 fi
 
@@ -271,23 +291,86 @@ fi
 [ "$NEEDS_WEB" -eq 1 ]   && recria web   "nginx.conf mudou"
 [ "$NEEDS_ADMIN" -eq 1 ] && recria admin "admin mudou"
 
+V1_OK=1
 if [ "$NEEDS_API" -eq 1 ] || [ "$NEEDS_WEB" -eq 1 ]; then
   # Espera de verdade. A versão anterior perguntava uma vez logo depois do
   # restart e avisava que o healthz não voltou 200 - o container levava uns
   # quarenta segundos para subir e o aviso era sempre falso alarme, o que é
   # pior que não avisar: um alerta que sempre grita deixa de ser lido.
+  V1_OK=0
   for _ in $(seq 1 30); do
     sleep 3
     # De dentro do container, e não pelo endereço publicado: o bind da porta é
     # configuração do servidor (HTTP_BIND) e já foi 127.0.0.1 e já foi
     # 192.168.0.20. Perguntar por dentro não depende de acertar qual é hoje.
     if ssh "$REMOTO" "cd $DESTINO && docker compose exec -T web wget -qO- --timeout=5 http://127.0.0.1/healthz" >/dev/null 2>&1; then
-      log "no ar"
-      exit 0
+      V1_OK=1
+      break
     fi
   done
-  log "ATENÇÃO: healthz não voltou 200 em 90s depois do restart"
-  exit 1
+  if [ "$V1_OK" -eq 0 ]; then
+    log "ATENÇÃO: healthz não voltou 200 em 90s depois do restart"
+    exit 1
+  fi
 fi
 
-log "no ar (só arquivos estáticos, sem restart)"
+# ── A V2, por último e sem encostar na V1 ────────────────────────────
+# Depois de tudo acima de propósito: o que já atende gente volta primeiro, e só
+# com o site de pé a api nova é reconstruída. Nada aqui recria `api` nem `web`.
+# O nginx alcança a `api-v2` por nome resolvido a cada pedido, então enquanto
+# ela está sendo trocada o site só deixa de responder em /api/v2.
+#
+# A ordem de dentro também importa:
+#
+#   1. a senha. O compose tem um padrão para quem clona e roda na própria
+#      máquina, e esse padrão não pode ser a senha de um banco em produção. E
+#      ela é gravada quando o volume nasce: subir uma vez sem ela é ficar com a
+#      senha errada num banco que já existe.
+#   2. o banco, e esperar ele aceitar conexão.
+#   3. a imagem nova.
+#   4. as migrations, com a imagem nova e antes de ela atender. Passo próprio e
+#      nunca a subida da api: migration que falha não pode ser o motivo de a
+#      api não voltar. Se falhar aqui, a api-v2 antiga continua de pé.
+#   5. só então o container é trocado.
+sobe_v2() {
+  local no_servidor="cd $DESTINO &&"
+
+  if ! ssh "$REMOTO" "grep -Eq '^POSTGRES_PASSWORD=.+' $DESTINO/.env"; then
+    log "v2: o .env do servidor não tem POSTGRES_PASSWORD; a V2 não sobe sem ela"
+    return 1
+  fi
+
+  ssh "$REMOTO" "$no_servidor docker compose up -d db" 2>&1 | sed 's/^/          /' \
+    || { log "v2: o db não subiu"; return 1; }
+  ssh "$REMOTO" "$no_servidor for _ in \$(seq 1 60); do docker compose exec -T db pg_isready -q -U steamprofiler -d steamprofiler && exit 0; sleep 1; done; exit 1" \
+    || { log "v2: o db não aceitou conexão em 60s"; return 1; }
+
+  ssh "$REMOTO" "$no_servidor docker compose build api-v2" 2>&1 | sed 's/^/          /' \
+    || { log "v2: o build falhou"; return 1; }
+
+  ssh "$REMOTO" "$no_servidor docker compose run --rm --no-deps api-v2 migrate" 2>&1 | sed 's/^/          /' \
+    || { log "v2: a migration falhou; a api-v2 que estava de pé não foi trocada"; return 1; }
+
+  ssh "$REMOTO" "$no_servidor docker compose up -d --no-deps --force-recreate api-v2" 2>&1 | sed 's/^/          /' \
+    || { log "v2: a api-v2 não subiu"; return 1; }
+
+  # Pelo mesmo `probe` que é o healthcheck do container: a imagem não tem
+  # shell nem wget para perguntar de outro jeito.
+  ssh "$REMOTO" "$no_servidor for _ in \$(seq 1 30); do docker compose exec -T api-v2 dotnet Service.API.dll probe && exit 0; sleep 2; done; exit 1" \
+    || { log "v2: a api-v2 não respondeu ao probe em 60s"; return 1; }
+}
+
+if [ "$NEEDS_V2" -eq 1 ]; then
+  log "v2 mudou, subindo db e api-v2"
+  if ! sobe_v2; then
+    log "ATENÇÃO: a V1 está no ar e intacta; a V2 não subiu"
+    exit 1
+  fi
+  log "v2 no ar"
+fi
+
+if [ "$NEEDS_API" -eq 1 ] || [ "$NEEDS_WEB" -eq 1 ] || [ "$NEEDS_V2" -eq 1 ]; then
+  log "no ar"
+else
+  log "no ar (só arquivos estáticos, sem restart)"
+fi

@@ -42,10 +42,17 @@ server {
     location = /gate { return 204; }
     location / { return 200 "$request_method $request_uri\n"; }
 }
+# The same container also stands in for the V2 api, on the port and under the
+# name nginx.conf proxies /api/v2/ to. It says so in what it answers, so a
+# request that landed on the wrong api cannot pass for one that did not.
+server {
+    listen 8080;
+    location / { return 200 "v2 $request_method $request_uri\n"; }
+}
 NGINX
 
 docker network create "$NET" >/dev/null || { echo "FAIL  write routing: no network"; exit 1; }
-docker run -d --name "$API" --network "$NET" --network-alias api \
+docker run -d --name "$API" --network "$NET" --network-alias api --network-alias api-v2 \
   -v "$WORK/api.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine >/dev/null \
   || { echo "FAIL  write routing: the stub api did not start"; exit 1; }
 docker run -d --name "$WEB" --network "$NET" \
@@ -83,5 +90,24 @@ sent /api/feedback  /feedback
 sent /api/vote      /vote
 sent /api/blog/vote /blog/vote
 
+# The V2 block. Its paths are not rewritten: the V2 api serves /api/v2/...
+# itself, so what it must see is exactly what was asked, query included. And
+# the write under /api/v2/ has to reach the V2, not be caught by the V1 regex
+# above, whose three names it happens to end with.
+reached() { # <method> <public path> <what the V2 api must say it saw>
+  local got
+  got="$(curl -sS -X "$1" -H 'Content-Type: application/json' \
+         "http://127.0.0.1:$PORT$2" 2>/dev/null)"
+  if [ "$got" != "$3" ]; then
+    echo "FAIL  $1 $2 answered '${got:-nothing}', wanted '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+reached GET  '/api/v2/healthz'                 'v2 GET /api/v2/healthz'
+reached GET  '/api/v2/blog/posts?lang=pt'      'v2 GET /api/v2/blog/posts?lang=pt'
+reached POST '/api/v2/blog/posts/a-post/vote'  'v2 POST /api/v2/blog/posts/a-post/vote'
+reached POST '/api/v2/board/messages/7/vote'   'v2 POST /api/v2/board/messages/7/vote'
+
 [ "$fails" -ne 0 ] && exit 1
-echo "the three writes reach the api under their own paths"
+echo "the three writes reach the api under their own paths; /api/v2/ reaches the V2 whole"
