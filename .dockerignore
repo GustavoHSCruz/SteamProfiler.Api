@@ -17,5 +17,6 @@ venv
 data
 site
 tests
+v2
 *.md
 LICENSE

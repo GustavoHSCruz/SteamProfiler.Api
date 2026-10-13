@@ -34,5 +34,12 @@ jobs:
         with:
           node-version: '22'
 
+      # The V2 solution under v2/. check.sh builds it, runs its unit tests and
+      # runs the integration suite against a real Postgres in a container,
+      # which the runner's docker provides.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: ./check.sh
         run: ./check.sh

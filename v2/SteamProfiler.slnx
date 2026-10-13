@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="1.Service.API/1.Service.API.csproj" />
+  <Project Path="2.Application/2.Application.csproj" />
+  <Project Path="3.Domain.Core/3.Domain.Core.csproj" />
+  <Project Path="3.Domain.Shared/3.Domain.Shared.csproj" />
+  <Project Path="4.Infrastructure/4.Infrastructure.csproj" />
+  <Project Path="5.Tests/5.Tests.csproj" />
+  <Project Path="6.Tests.Integration/6.Tests.Integration.csproj" />
+</Solution>

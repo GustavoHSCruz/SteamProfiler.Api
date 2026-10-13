@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- O SDK empacotado por algumas distribuições Linux vem sem a lista de pacotes que o
+         ASP.NET já traz, e sem ela o build morre em NETSDK1226. O SDK oficial e a imagem do
+         Docker têm a lista; isto só deixa o build local passar sem ela. -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+</Project>

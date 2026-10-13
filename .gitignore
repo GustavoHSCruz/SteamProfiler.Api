@@ -14,6 +14,12 @@ htmlcov/
 .venv/
 venv/
 
+# .NET build output of the V2 solution
+v2/**/bin/
+v2/**/obj/
+v2/**/TestResults/
+*.user
+
 # Runtime state and a separately checked-out frontend
 data/
 site/

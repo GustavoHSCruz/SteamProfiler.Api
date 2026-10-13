@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Domain.Core</RootNamespace>
+    <AssemblyName>Domain.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\3.Domain.Shared\3.Domain.Shared.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+# O contexto do build não respeita o .gitignore. Sem isto, o bin/ e o obj/ compilados na
+# máquina de quem builda entram na imagem por cima do que o container compilou.
+**/bin/
+**/obj/
+**/TestResults/
+
+# Os testes não vão para produção, e mexer neles não deveria refazer a imagem.
+5.Tests/
+6.Tests.Integration/
+
+.config/
+.dockerignore
+Dockerfile
+**/*.md

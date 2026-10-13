@@ -67,6 +67,45 @@ done < <(find . -name '*.js' -not -path './.git/*' -not -path './data/*' | sort)
 step "search catalogue tests" python3 -m unittest discover -s tests -p 'test_*.py'
 step "release tree has no obvious secrets" python3 tools/audit-release.py
 
+# ── A V2 ─────────────────────────────────────────────────────────────
+# A api em .NET que mora em v2/ e convive com a de cima até substituí-la. Mesma
+# régua: compila, passa nos testes e está formatada, ou não sai daqui.
+#
+# `--artifacts-path` num temporário não é capricho. Esta árvore é a que o
+# deploy.sh manda para o servidor logo depois de rodar este arquivo, e um build
+# comum deixaria bin/ e obj/ dentro de cada projeto, a caminho do rsync.
+#
+# Os testes de integração sobem um Postgres de verdade num container, então
+# pedem docker; sem ele ficam de fora, e está dito na saída. O limite de dois
+# minutos existe porque um teste que trava não falha: fica parado, e este
+# arquivo é chamado por um deploy que esperaria para sempre.
+if [ -f v2/SteamProfiler.slnx ]; then
+  if command -v dotnet >/dev/null 2>&1; then
+    V2_OUT="$(mktemp -d)"
+    quiet "v2: dotnet build" \
+      dotnet build v2/SteamProfiler.slnx -c Release --nologo -v q \
+        --artifacts-path "$V2_OUT"
+    quiet "v2: unit tests" \
+      dotnet test v2/5.Tests/5.Tests.csproj -c Release --no-build --nologo -v q \
+        --artifacts-path "$V2_OUT" --results-directory "$V2_OUT/results" \
+        --blame-hang-timeout 2m
+    if command -v docker >/dev/null 2>&1; then
+      quiet "v2: integration tests (real Postgres)" \
+        dotnet test v2/6.Tests.Integration/6.Tests.Integration.csproj -c Release \
+          --no-build --nologo -v q \
+          --artifacts-path "$V2_OUT" --results-directory "$V2_OUT/results" \
+          --blame-hang-timeout 2m
+    else
+      echo "  skip  v2: integration tests (no docker here)"
+    fi
+    quiet "v2: formatted (csharpier)" \
+      bash -c 'cd v2 && dotnet tool restore >/dev/null && dotnet csharpier check .'
+    rm -rf "$V2_OUT"
+  else
+    echo "  skip  v2: build and tests (no dotnet here)"
+  fi
+fi
+
 # ── Would it start ───────────────────────────────────────────────────
 if command -v docker >/dev/null 2>&1; then
   quiet "nginx.conf is valid" \

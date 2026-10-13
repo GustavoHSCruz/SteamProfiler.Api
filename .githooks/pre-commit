@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Formatação da V2, conferida antes de o commit existir.
+#
+# O pre-push já roda o check.sh inteiro, formatação inclusive. Este aqui existe
+# para o erro aparecer no commit que o criou, e não quinze commits depois, na
+# hora de publicar. Só olha quando há C# no stage, e custa menos de um segundo.
+#
+#   git commit --no-verify   pula. O pre-push ainda confere.
+set -uo pipefail
+
+git diff --cached --name-only --diff-filter=ACMR | grep -qE '^v2/.*\.(cs|csproj|props)$' || exit 0
+
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "pre-commit: sem dotnet aqui, formatação da v2 não conferida"
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)/v2" || exit 1
+dotnet tool restore >/dev/null 2>&1
+if ! dotnet csharpier check .; then
+  echo
+  echo "pre-commit: RECUSADO. Rode:  cd v2 && dotnet csharpier format ."
+  exit 1
+fi
